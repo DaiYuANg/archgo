@@ -86,7 +86,10 @@ func main() {
 	}()
 
 	// 创建 logger
-	logger, err := logx.New(logx.WithConsole(true))
+	logger, err := logx.New(
+		logx.WithConsole(true),
+		logx.WithDebugLevel(),
+	)
 	if err != nil {
 		panic(err)
 	}

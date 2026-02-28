@@ -60,7 +60,10 @@ func (e *UserEndpoint) CreateUser(ctx context.Context, w http.ResponseWriter, r 
 
 func main() {
     // 创建 logger
-    logger, _ := logx.New(logx.WithConsole(true))
+    logger, _ := logx.New(
+        logx.WithConsole(true),
+        logx.WithDebugLevel(),
+    )
     defer logger.Close()
     slogLogger := logx.NewSlog(logger)
 
