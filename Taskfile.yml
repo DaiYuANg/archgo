@@ -95,9 +95,34 @@ tasks:
       - git push {{.REMOTE}} :refs/tags/{{.VERSION}}
 
   release:auto:
-    desc: Auto bump patch version and push tag via scripts/tagger
+    desc: Auto bump patch version and create local tag
     cmds:
       - go run ./scripts/tagger
+
+  release:auto:push:
+    desc: Auto bump patch version and push tag
+    cmds:
+      - go run ./scripts/tagger --push
+
+  release:minor:
+    desc: Auto bump minor version and create local tag
+    cmds:
+      - go run ./scripts/tagger --minor
+
+  release:minor:push:
+    desc: Auto bump minor version and push tag
+    cmds:
+      - go run ./scripts/tagger --minor --push
+
+  release:major:
+    desc: Auto bump major version and create local tag
+    cmds:
+      - go run ./scripts/tagger --major
+
+  release:major:push:
+    desc: Auto bump major version and push tag
+    cmds:
+      - go run ./scripts/tagger --major --push
 
   tag:
     desc: Alias of release:auto
