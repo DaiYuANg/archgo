@@ -250,10 +250,7 @@ func (t *Trie[V]) pairsWithPrefix(prefix string) []keyValue[V] {
 		return nil
 	}
 
-	path := make([]rune, 0, len(prefix))
-	for _, ch := range prefix {
-		path = append(path, ch)
-	}
+	path := []rune(prefix)
 	out := make([]keyValue[V], 0)
 	t.collectPairs(startNode, &path, &out)
 	return out

@@ -9,30 +9,30 @@ import (
 	"github.com/knadh/koanf/v2"
 )
 
-// loadDotenv 加载 .env 文件
-// ignoreErr: 是否忽略文件不存在的错误
+// loadDotenv loads related configuration.
+// ignoreErr documents related behavior.
 func loadDotenv(k *koanf.Koanf, files []string, ignoreErr bool) error {
 	for _, f := range files {
-		// 检查文件是否存在
+		// Note.
 		if _, err := os.Stat(f); os.IsNotExist(err) {
 			if !ignoreErr {
 				return err
 			}
-			// 忽略不存在的文件
+			// Note.
 			continue
 		}
 		if err := godotenv.Load(f); err != nil && !ignoreErr {
 			return err
 		}
-		// 忽略加载错误
+		// Note.
 	}
 	return nil
 }
 
-// loadEnv 加载环境变量到 koanf
-// prefix: 环境变量前缀，如 "APP_"
-// 支持将环境变量映射到 koanf 的 key (使用 . 作为分隔符)
-// 例如：APP_DATABASE_HOST=db.example.com -> database.host
+// loadEnv loads related configuration.
+// prefix documents related behavior.
+// Note.
+// Note.
 func loadEnv(k *koanf.Koanf, prefix string) error {
 	normalizedPrefix := normalizeEnvPrefix(prefix)
 
@@ -42,7 +42,7 @@ func loadEnv(k *koanf.Koanf, prefix string) error {
 			keyWithoutPrefix := strings.TrimPrefix(k, normalizedPrefix)
 			keyWithoutPrefix = strings.TrimPrefix(keyWithoutPrefix, "_")
 
-			// 转换为小写并将 _ 替换为 .
+			// Note.
 			key := strings.ReplaceAll(strings.ToLower(keyWithoutPrefix), "_", ".")
 			return key, v
 		},

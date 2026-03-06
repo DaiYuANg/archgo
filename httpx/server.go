@@ -9,86 +9,123 @@ import (
 	"sync"
 	"time"
 
+	collectionset "github.com/DaiYuANg/arcgo/collectionx/set"
 	"github.com/DaiYuANg/arcgo/httpx/adapter"
 	"github.com/DaiYuANg/arcgo/httpx/adapter/std"
 	"github.com/danielgtaylor/huma/v2"
+	"github.com/go-playground/validator/v10"
 	"github.com/samber/lo"
 )
 
-// Server HTTP 服务器。
+// Server documents related behavior.
 //
-// 设计说明：
-// 1. 以泛型强类型路由注册为核心（见 Route/Get/Post 等泛型函数）
-// 2. Huma 是可选能力：启用后使用 huma.Register；关闭时走内置 JSON 编解码
-// 3. 中间件始终建议通过各框架原生方式注册
+// Note.
+// Note.
+// Note.
+// Note.
+// Note.
 type Server struct {
 	adapter     adapter.Adapter
 	basePath    string
 	routesMu    sync.RWMutex
 	routes      []RouteInfo
+	routeKeys   *collectionset.Set[string]
 	logger      *slog.Logger
 	printRoutes bool
 	humaOpts    adapter.HumaOptions
+	validator   *validator.Validate
 }
 
-// Group 泛型路由组。
+// Group documents related behavior.
 type Group struct {
 	server *Server
 	prefix string
 }
 
-// ServerOption Server 配置选项。
+// ServerOption documents related behavior.
 type ServerOption func(*Server)
 
-// WithAdapter 设置适配器。
+// WithAdapter configures related behavior.
 func WithAdapter(adapter adapter.Adapter) ServerOption {
 	return func(s *Server) {
 		s.adapter = adapter
 	}
 }
 
-// WithAdapterName 通过名称设置适配器（已废弃，请使用 WithAdapter）。
-// Deprecated: 请直接使用各框架的 adapter 子包，如 adapter/gin.New()
+// WithAdapterName configures related behavior.
+// Deprecated: use the new replacement API documented in this package.
 func WithAdapterName(name string) ServerOption {
 	return func(s *Server) {
 		s.logger.Warn("WithAdapterName is deprecated, use adapter subpackages directly")
 	}
 }
 
-// WithBasePath 设置基础路径。
+// WithBasePath configures related behavior.
 func WithBasePath(path string) ServerOption {
 	return func(s *Server) {
 		s.basePath = normalizeRoutePrefix(path)
 	}
 }
 
-// WithLogger 设置日志记录器。
+// WithLogger configures related behavior.
 func WithLogger(logger *slog.Logger) ServerOption {
 	return func(s *Server) {
 		s.logger = logger
 	}
 }
 
-// WithPrintRoutes 设置是否打印路由。
+// WithPrintRoutes configures related behavior.
 func WithPrintRoutes(enabled bool) ServerOption {
 	return func(s *Server) {
 		s.printRoutes = enabled
 	}
 }
 
-// WithHuma 配置 Huma OpenAPI 文档。
-func WithHuma(opts HumaOptions) ServerOption {
+// WithOpenAPIInfo configures related behavior.
+func WithOpenAPIInfo(title, version, description string) ServerOption {
 	return func(s *Server) {
-		s.humaOpts = adapter.HumaOptions(opts)
+		if strings.TrimSpace(title) != "" {
+			s.humaOpts.Title = strings.TrimSpace(title)
+		}
+		if strings.TrimSpace(version) != "" {
+			s.humaOpts.Version = strings.TrimSpace(version)
+		}
+		if strings.TrimSpace(description) != "" {
+			s.humaOpts.Description = strings.TrimSpace(description)
+		}
 	}
 }
 
-// NewServer 创建 HTTP 服务器。
+// WithOpenAPIDocs provides default behavior.
+func WithOpenAPIDocs(enabled bool) ServerOption {
+	return func(s *Server) {
+		s.humaOpts.DisableDocsRoutes = !enabled
+	}
+}
+
+// WithValidation enables related functionality.
+func WithValidation() ServerOption {
+	return func(s *Server) {
+		if s.validator == nil {
+			s.validator = validator.New(validator.WithRequiredStructEnabled())
+		}
+	}
+}
+
+// WithValidator closes related resources.
+func WithValidator(v *validator.Validate) ServerOption {
+	return func(s *Server) {
+		s.validator = v
+	}
+}
+
+// NewServer creates related functionality.
 func NewServer(opts ...ServerOption) *Server {
 	s := &Server{
-		logger:   slog.Default(),
-		routes:   make([]RouteInfo, 0),
-		humaOpts: adapter.DefaultHumaOptions(),
+		logger:    slog.Default(),
+		routes:    make([]RouteInfo, 0),
+		routeKeys: collectionset.NewSet[string](),
+		humaOpts:  adapter.DefaultHumaOptions(),
 	}
 
 	lo.ForEach(opts, func(opt ServerOption, _ int) {
@@ -96,18 +133,18 @@ func NewServer(opts ...ServerOption) *Server {
 	})
 
 	if s.adapter == nil {
-		// 默认使用 std adapter
+		// Note.
 		s.adapter = std.New()
 	}
 
-	if s.humaOpts.Enabled {
-		s.adapter.EnableHuma(s.humaOpts)
+	if humaConfigurator, ok := s.adapter.(adapter.HumaConfigurator); ok {
+		humaConfigurator.ConfigureHuma(s.humaOpts)
 	}
 
 	return s
 }
 
-// Group 创建路由分组。
+// Group creates related functionality.
 func (s *Server) Group(prefix string) *Group {
 	return &Group{
 		server: s,
@@ -115,33 +152,7 @@ func (s *Server) Group(prefix string) *Group {
 	}
 }
 
-func (s *Server) writeHandlerError(w http.ResponseWriter, r *http.Request, err error) {
-	if err == nil {
-		return
-	}
-
-	status := http.StatusInternalServerError
-	message := err.Error()
-
-	var httpxErr *Error
-	if errors.As(err, &httpxErr) {
-		status = httpxErr.Code
-		message = httpxErr.Message
-	}
-
-	s.logger.Error("Handler error",
-		slog.String("method", r.Method),
-		slog.String("path", r.URL.Path),
-		slog.Int("status", status),
-		slog.String("error", err.Error()),
-	)
-
-	writeJSON(w, status, map[string]any{
-		"error": message,
-	})
-}
-
-// printRoutesIfEnabled 打印路由。
+// printRoutesIfEnabled documents related behavior.
 func (s *Server) printRoutesIfEnabled() {
 	if !s.printRoutes {
 		return
@@ -158,7 +169,7 @@ func (s *Server) printRoutesIfEnabled() {
 	})
 }
 
-// GetRoutes 返回所有路由。
+// GetRoutes returns related data.
 func (s *Server) GetRoutes() []RouteInfo {
 	routes := s.routesSnapshot()
 	return lo.Map(routes, func(route RouteInfo, _ int) RouteInfo {
@@ -166,7 +177,7 @@ func (s *Server) GetRoutes() []RouteInfo {
 	})
 }
 
-// GetRoutesByMethod 按方法过滤路由。
+// GetRoutesByMethod documents related behavior.
 func (s *Server) GetRoutesByMethod(method string) []RouteInfo {
 	routes := s.routesSnapshot()
 	return lo.Filter(routes, func(route RouteInfo, _ int) bool {
@@ -174,7 +185,7 @@ func (s *Server) GetRoutesByMethod(method string) []RouteInfo {
 	})
 }
 
-// GetRoutesByPath 按路径过滤路由。
+// GetRoutesByPath documents related behavior.
 func (s *Server) GetRoutesByPath(prefix string) []RouteInfo {
 	routes := s.routesSnapshot()
 	return lo.Filter(routes, func(route RouteInfo, _ int) bool {
@@ -182,42 +193,41 @@ func (s *Server) GetRoutesByPath(prefix string) []RouteInfo {
 	})
 }
 
-// HasRoute 检查路由是否存在。
+// HasRoute checks related state.
 func (s *Server) HasRoute(method, path string) bool {
-	upperMethod := strings.ToUpper(method)
-	routes := s.routesSnapshot()
-	return lo.SomeBy(routes, func(route RouteInfo) bool {
-		return route.Method == upperMethod && route.Path == path
-	})
+	s.routesMu.RLock()
+	defer s.routesMu.RUnlock()
+	return s.routeKeys.Contains(routeKey(strings.ToUpper(method), path))
 }
 
-// RouteCount 返回路由数量。
+// RouteCount returns related data.
 func (s *Server) RouteCount() int {
 	s.routesMu.RLock()
 	defer s.routesMu.RUnlock()
 	return len(s.routes)
 }
 
-// Handler 返回 http.Handler。
+// Handler returns related data.
 func (s *Server) Handler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		s.adapter.ServeHTTP(w, r)
 	})
 }
 
-// ServeHTTP 实现 http.Handler。
+// ServeHTTP documents related behavior.
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	s.Handler().ServeHTTP(w, r)
 }
 
-// ListenAndServe 启动服务器。
+// ListenAndServe starts related services.
 func (s *Server) ListenAndServe(addr string) error {
 	routeCount := s.RouteCount()
 	s.logger.Info("Starting server",
 		slog.String("address", addr),
 		slog.String("adapter", s.adapter.Name()),
 		slog.Int("routes", routeCount),
-		slog.Bool("huma_enabled", s.humaOpts.Enabled),
+		slog.Bool("huma_enabled", s.adapter.HasHuma()),
+		slog.Bool("openapi_docs_enabled", !s.humaOpts.DisableDocsRoutes),
 	)
 
 	if listenable, ok := s.adapter.(adapter.ListenableAdapter); ok {
@@ -227,7 +237,7 @@ func (s *Server) ListenAndServe(addr string) error {
 	return http.ListenAndServe(addr, s.Handler())
 }
 
-// ListenAndServeContext 启动服务器（支持 context）。
+// ListenAndServeContext starts related services.
 func (s *Server) ListenAndServeContext(ctx context.Context, addr string) error {
 	if listenable, ok := s.adapter.(adapter.ContextListenableAdapter); ok {
 		return listenable.ListenContext(ctx, addr)
@@ -266,22 +276,27 @@ func (s *Server) ListenAndServeContext(ctx context.Context, addr string) error {
 	}
 }
 
-// Adapter 返回适配器。
+// Adapter returns related data.
 func (s *Server) Adapter() adapter.Adapter {
 	return s.adapter
 }
 
-// Logger 返回日志记录器。
+// Logger returns related data.
 func (s *Server) Logger() *slog.Logger {
 	return s.logger
 }
 
-// HumaAPI 返回 Huma API（未启用时为 nil）。
+// Validator returns related data.
+func (s *Server) Validator() *validator.Validate {
+	return s.validator
+}
+
+// HumaAPI returns related data.
 func (s *Server) HumaAPI() huma.API {
 	return s.adapter.HumaAPI()
 }
 
-// HasHuma 检查是否启用了 Huma。
+// HasHuma checks related state.
 func (s *Server) HasHuma() bool {
 	return s.adapter.HasHuma()
 }
@@ -289,6 +304,11 @@ func (s *Server) HasHuma() bool {
 func (s *Server) addRoute(route RouteInfo) {
 	s.routesMu.Lock()
 	defer s.routesMu.Unlock()
+	key := routeKey(route.Method, route.Path)
+	if s.routeKeys.Contains(key) {
+		return
+	}
+	s.routeKeys.Add(key)
 	s.routes = append(s.routes, route)
 }
 
@@ -296,4 +316,8 @@ func (s *Server) routesSnapshot() []RouteInfo {
 	s.routesMu.RLock()
 	defer s.routesMu.RUnlock()
 	return append([]RouteInfo(nil), s.routes...)
+}
+
+func routeKey(method, path string) string {
+	return method + " " + path
 }

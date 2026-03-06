@@ -106,7 +106,7 @@ func TestPublishAsyncNilContext(t *testing.T) {
 
 	nilCtx := make(chan bool, 1)
 	_, err := Subscribe(bus, func(ctx context.Context, evt userCreated) error {
-		nilCtx <- (ctx == nil)
+		nilCtx <- ctx == nil
 		return nil
 	})
 	require.NoError(t, err)

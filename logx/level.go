@@ -7,31 +7,31 @@ import (
 	"github.com/rs/zerolog"
 )
 
-// Level 日志级别（强类型）
+// Level documents related behavior.
 type Level int
 
 const (
-	// TraceLevel 最详细的日志，用于追踪程序执行流程
+	// TraceLevel documents related behavior.
 	TraceLevel Level = iota
-	// DebugLevel 调试日志，用于开发环境调试
+	// DebugLevel documents related behavior.
 	DebugLevel
-	// InfoLevel 信息日志，记录正常业务流程
+	// InfoLevel logs related events.
 	InfoLevel
-	// WarnLevel 警告日志，记录潜在问题
+	// WarnLevel logs related events.
 	WarnLevel
-	// ErrorLevel 错误日志，记录错误但程序仍可运行
+	// ErrorLevel logs related events.
 	ErrorLevel
-	// FatalLevel 致命错误日志，记录后程序会退出
+	// FatalLevel logs related events.
 	FatalLevel
-	// PanicLevel 恐慌日志，记录后会触发 panic
+	// PanicLevel logs related events.
 	PanicLevel
-	// DisabledLevel 禁用所有日志
+	// DisabledLevel disables related functionality.
 	DisabledLevel
-	// NoLevel 无级别（用于特殊场景）
+	// NoLevel documents related behavior.
 	NoLevel
 )
 
-// String 返回日志级别的字符串表示
+// String returns related data.
 func (l Level) String() string {
 	switch l {
 	case TraceLevel:
@@ -57,7 +57,7 @@ func (l Level) String() string {
 	}
 }
 
-// ParseLevel 从字符串解析日志级别
+// ParseLevel parses related input.
 func ParseLevel(s string) (Level, error) {
 	switch strings.ToLower(strings.TrimSpace(s)) {
 	case "trace":
@@ -83,7 +83,7 @@ func ParseLevel(s string) (Level, error) {
 	}
 }
 
-// MustParseLevel 从字符串解析日志级别，失败则 panic
+// MustParseLevel parses related input.
 func MustParseLevel(s string) Level {
 	level, err := ParseLevel(s)
 	if err != nil {
@@ -92,7 +92,7 @@ func MustParseLevel(s string) Level {
 	return level
 }
 
-// ToZerologLevel 转换为 zerolog 级别
+// ToZerologLevel converts related values.
 func (l Level) ToZerologLevel() zerolog.Level {
 	switch l {
 	case TraceLevel:
@@ -118,49 +118,49 @@ func (l Level) ToZerologLevel() zerolog.Level {
 	}
 }
 
-// Enabled 检查该级别是否启用（比当前级别高的都启用）
+// Enabled checks related state.
 func (l Level) Enabled(current Level) bool {
 	return l >= current
 }
 
-// 预设级别
+// Note.
 
-// Trace 返回 trace 级别
+// Trace returns related data.
 func Trace() Level {
 	return TraceLevel
 }
 
-// Debug 返回 debug 级别
+// Debug returns related data.
 func Debug() Level {
 	return DebugLevel
 }
 
-// Info 返回 info 级别
+// Info returns related data.
 func Info() Level {
 	return InfoLevel
 }
 
-// Warn 返回 warn 级别
+// Warn returns related data.
 func Warn() Level {
 	return WarnLevel
 }
 
-// Error 返回 error 级别
+// Error returns related data.
 func Error() Level {
 	return ErrorLevel
 }
 
-// Fatal 返回 fatal 级别
+// Fatal returns related data.
 func Fatal() Level {
 	return FatalLevel
 }
 
-// Panic 返回 panic 级别
+// Panic returns related data.
 func Panic() Level {
 	return PanicLevel
 }
 
-// Disabled 返回 disabled 级别
+// Disabled returns related data.
 func Disabled() Level {
 	return DisabledLevel
 }

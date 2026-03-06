@@ -1,216 +1,203 @@
 # configx
 
-基于 [koanf](https://github.com/knadh/koanf) 和 [validator](https://github.com/go-playground/validator) 的配置加载库，支持 dotenv + 配置文件 + 环境变量，可配置优先级，并支持结构体验证。
+`configx` is a layered configuration loader built on top of `koanf` and `validator`.
 
-## 特性
+[Chinese](./README_ZH.md)
 
-- ✅ 支持 `.env` 文件加载
-- ✅ 支持配置文件 (YAML/JSON/TOML)
-- ✅ 支持环境变量
-- ✅ 可配置加载优先级
-- ✅ 支持默认值
-- ✅ 基于 validator 的结构体验证
-- ✅ 简洁易用的 API
+## What It Supports
 
-## 安装
+- `.env` loading (`WithDotenv`)
+- Config file loading (`WithFiles`)
+- Environment variable loading (`WithEnvPrefix`)
+- Custom source precedence (`WithPriority`)
+- Defaults via map or struct (`WithDefaults`, `WithDefaultsStruct`)
+- Optional validation (`WithValidateLevel`, `WithValidator`)
+- Generic and non-generic loading entry points
 
-```bash
-go get github.com/DaiYuANg/arcgo/configx
-```
+## Loading Flow
 
-## 快速开始
+`configx` merges sources by priority. Later sources override earlier ones.
 
-### 基本用法
+Default priority:
+
+1. dotenv
+2. files
+3. env vars
+
+## Quick Start
 
 ```go
-package main
-
-import (
-    "fmt"
-    "github.com/DaiYuANg/arcgo/configx"
-)
-
-type Config struct {
+type AppConfig struct {
     Name string `mapstructure:"name" validate:"required"`
-    Port int    `mapstructure:"port" validate:"required,min=1024,max=65535"`
-    Debug bool  `mapstructure:"debug"`
+    Port int    `mapstructure:"port" validate:"required,min=1,max=65535"`
 }
 
-func main() {
-    var cfg Config
-    
-    err := configx.Load(&cfg,
-        configx.WithDotenv(),              // 加载 .env 文件
-        configx.WithFiles("config.yaml"),  // 加载配置文件
-        configx.WithEnvPrefix("APP"),      // 加载 APP_ 开头的环境变量
-        configx.WithValidateLevel(configx.ValidateLevelRequired),
-    )
-    
-    if err != nil {
-        panic(err)
-    }
-    
-    fmt.Printf("Name: %s, Port: %d, Debug: %v\n", cfg.Name, cfg.Port, cfg.Debug)
+var cfg AppConfig
+err := configx.Load(&cfg,
+    configx.WithDotenv(),
+    configx.WithFiles("config.yaml"),
+    configx.WithEnvPrefix("APP"),
+    configx.WithValidateLevel(configx.ValidateLevelRequired),
+)
+if err != nil {
+    panic(err)
 }
 ```
 
-### 使用 Config 对象
+## Common Scenarios
+
+### 1) Local development (`.env` first)
 
 ```go
-package main
-
-import (
-    "fmt"
-    "github.com/DaiYuANg/arcgo/configx"
-)
-
-func main() {
-    // 加载配置并返回 Config 对象
-    cfg, err := configx.LoadConfig(
-        configx.WithDotenv(),
-        configx.WithFiles("config.yaml"),
-        configx.WithEnvPrefix("APP"),
-    )
-    if err != nil {
-        panic(err)
-    }
-    
-    // 使用 getter 方法
-    name := cfg.GetString("app.name")
-    port := cfg.GetInt("app.port")
-    debug := cfg.GetBool("app.debug")
-    timeout := cfg.GetDuration("app.timeout")
-    
-    // 解构到结构体
-    var config Config
-    err = cfg.Unmarshal("", &config)
-    if err != nil {
-        panic(err)
-    }
-    
-    fmt.Printf("Name: %s, Port: %d\n", name, port)
-}
-```
-
-### 配置优先级
-
-默认优先级：`.env` < 配置文件 < 环境变量（后者覆盖前者）
-
-自定义优先级：
-
-```go
-// 环境变量优先级最高
-configx.Load(&cfg,
-    configx.WithPriority(
-        configx.SourceDotenv,
-        configx.SourceFile,
-        configx.SourceEnv,
-    ),
-)
-
-// 配置文件优先级最高
-configx.Load(&cfg,
-    configx.WithPriority(
-        configx.SourceEnv,
-        configx.SourceDotenv,
-        configx.SourceFile,
-    ),
+err := configx.Load(&cfg,
+    configx.WithDotenv(".env", ".env.local"),
+    configx.WithIgnoreDotenvError(true),
 )
 ```
 
-### 设置默认值
+### 2) File + environment override
 
 ```go
-configx.Load(&cfg,
+err := configx.Load(&cfg,
+    configx.WithFiles("config.yaml"),
+    configx.WithEnvPrefix("APP"),
+    configx.WithPriority(configx.SourceFile, configx.SourceEnv),
+)
+```
+
+### 3) Bootstrap with defaults only
+
+```go
+err := configx.Load(&cfg,
     configx.WithDefaults(map[string]any{
-        "app.name": "my-app",
-        "app.port": 8080,
-        "app.debug": false,
+        "name": "my-service",
+        "port": 8080,
     }),
 )
 ```
 
-### 结构体验证
+### 4) Defaults from a struct
 
 ```go
-type Config struct {
-    Name     string `mapstructure:"name" validate:"required"`
-    Port     int    `mapstructure:"port" validate:"required,min=1024,max=65535"`
-    Database struct {
-        Host string `mapstructure:"host" validate:"required,hostname"`
-        Port int    `mapstructure:"port" validate:"required"`
-    } `mapstructure:"database"`
+type DefaultCfg struct {
+    Name string `mapstructure:"name"`
+    Port int    `mapstructure:"port"`
 }
 
-// 启用验证
-configx.Load(&cfg,
+err := configx.Load(&cfg,
+    configx.WithDefaultsStruct(DefaultCfg{Name: "svc", Port: 8080}),
+)
+```
+
+### 5) Generic loading API
+
+```go
+result := configx.LoadT[AppConfig](
     configx.WithFiles("config.yaml"),
+)
+if result.IsError() {
+    panic(result.Error())
+}
+cfg := result.MustGet()
+```
+
+### 6) Explicit `Config` object usage
+
+```go
+c, err := configx.LoadConfig(
+    configx.WithFiles("config.yaml"),
+)
+if err != nil {
+    panic(err)
+}
+
+name := c.GetString("app.name")
+port := c.GetInt("app.port")
+exists := c.Exists("app.debug")
+all := c.All()
+_, _, _, _ = name, port, exists, all
+```
+
+## Validation Modes
+
+- `ValidateLevelNone`: no validation
+- `ValidateLevelStruct`: run struct validation
+- `ValidateLevelRequired`: required tags enforced (same struct validation path)
+
+If you need custom validators/tags:
+
+```go
+v := validator.New(validator.WithRequiredStructEnabled())
+err := configx.Load(&cfg,
+    configx.WithValidator(v),
     configx.WithValidateLevel(configx.ValidateLevelRequired),
 )
 ```
 
-### 验证级别
+## Environment Key Mapping
 
-- `ValidateLevelNone` - 不验证（默认）
-- `ValidateLevelStruct` - 验证结构体标签
-- `ValidateLevelRequired` - 验证 required 标签
+With `WithEnvPrefix("APP")`:
 
-## API 参考
+- `APP_DATABASE_HOST` -> `database.host`
+- `APP_SERVER_READ_TIMEOUT` -> `server.read.timeout`
 
-### 选项函数
+## Production Tips
 
-| 函数 | 说明 |
-|------|------|
-| `WithDotenv(files ...string)` | 启用 .env 文件加载 |
-| `WithEnvPrefix(prefix string)` | 设置环境变量前缀 |
-| `WithFiles(files ...string)` | 设置配置文件路径 |
-| `WithPriority(p ...Source)` | 设置配置源优先级 |
-| `WithDefaults(m map[string]any)` | 设置默认值 |
-| `WithValidateLevel(level ValidateLevel)` | 设置验证级别 |
-| `WithValidator(v *validator.Validate)` | 设置自定义 validator |
+- Keep source precedence explicit in production builds.
+- Use defaults for non-critical values to reduce startup failures.
+- Use validation for critical fields (ports, credentials, hostnames).
+- Keep `.env` optional in production unless explicitly required.
 
-### Config 方法
+## Test Patterns
 
-| 方法 | 说明 |
-|------|------|
-| `GetString(path string) string` | 获取字符串 |
-| `GetInt(path string) int` | 获取整数 |
-| `GetInt64(path string) int64` | 获取 64 位整数 |
-| `GetFloat64(path string) float64` | 获取浮点数 |
-| `GetBool(path string) bool` | 获取布尔值 |
-| `GetDuration(path string) time.Duration` | 获取时长 |
-| `GetStringSlice(path string) []string` | 获取字符串切片 |
-| `GetIntSlice(path string) []int` | 获取整数切片 |
-| `Unmarshal(path string, out any) error` | 解构到结构体 |
-| `Exists(path string) bool` | 检查键是否存在 |
-| `All() map[string]any` | 获取所有配置 |
+- Use `WithDefaults` for deterministic tests.
+- Avoid real env dependencies in unit tests unless test isolates `os.Environ`.
+- Use `LoadT[T]` in tests to reduce boilerplate.
 
-## 示例配置文件
+## FAQ
 
-### config.yaml
+### Which source should have highest priority?
 
-```yaml
-app:
-  name: my-application
-  port: 8080
-  debug: true
+In most services, environment variables should be highest priority in production.  
+A common order is: defaults -> file -> env.
 
-database:
-  host: localhost
-  port: 5432
-  user: admin
-  password: secret
-```
+### Should I use `Load` or `LoadConfig`?
 
-### .env
+- Use `Load` if you just need one typed struct.
+- Use `LoadConfig` when you also need dynamic getters (`GetString`, `Exists`, `All`) after load.
 
-```env
-APP_NAME=my-app
-APP_PORT=3000
-DATABASE_HOST=db.example.com
-DATABASE_PORT=5432
-```
+### Map defaults vs struct defaults?
 
-## License
+- `WithDefaults(map[string]any)` is explicit and dynamic.
+- `WithDefaultsStruct` is convenient when you already have typed default config structs.
 
-MIT
+## Troubleshooting
+
+### Environment values are not taking effect
+
+Check these first:
+
+- `WithEnvPrefix` matches actual env key prefix.
+- `WithPriority` places `SourceEnv` after other sources.
+- Env keys map to dot-path format (`APP_DB_HOST` -> `db.host`).
+
+### Validation does not run
+
+Validation is disabled unless configured.  
+Set `WithValidateLevel(...)`, or wire `WithValidator(...)` plus validation level.
+
+### `.env` file missing crashes startup
+
+Use `WithIgnoreDotenvError(true)` in environments where `.env` is optional.
+
+### `WithDefaultsStruct` fails for unsupported types
+
+The struct-to-map conversion is reflection-based.  
+Keep defaults structs simple and export fields with predictable `mapstructure` tags.
+
+## Anti-Patterns
+
+- Relying on implicit source precedence in production.
+- Reading config from process env directly in business code after adopting `configx`.
+- Disabling validation for critical fields (ports, credentials, URLs).
+- Mixing unrelated prefixes across multiple services in shared environments.

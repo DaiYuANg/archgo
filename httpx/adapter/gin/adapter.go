@@ -15,12 +15,12 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// Adapter Gin 框架适配器
+// Adapter documents related behavior.
 //
-// 使用方式：
-// 1. 创建适配器：ginAdapter := gin.New()
-// 2. 注册 Gin 原生中间件：ginAdapter.Engine().Use(gin.Logger(), yourMiddleware...)
-// 3. 创建 httpx server 并注册路由
+// Note.
+// Note.
+// Note.
+// Note.
 type Adapter struct {
 	engine  *gin.Engine
 	group   *gin.RouterGroup
@@ -29,7 +29,7 @@ type Adapter struct {
 	humaCfg adapter.HumaOptions
 }
 
-// New 创建 Gin 适配器
+// New creates related functionality.
 func New(engine ...*gin.Engine) *Adapter {
 	var eng *gin.Engine
 	if len(engine) > 0 {
@@ -45,37 +45,31 @@ func New(engine ...*gin.Engine) *Adapter {
 	}
 }
 
-// WithHuma 启用 Huma OpenAPI 文档
-func (a *Adapter) WithHuma(opts adapter.HumaOptions) *Adapter {
+// ConfigureHuma configures related behavior.
+func (a *Adapter) ConfigureHuma(opts adapter.HumaOptions) {
 	a.humaCfg = opts
 	cfg := huma.DefaultConfig(opts.Title, opts.Version)
-	cfg.Info.Description = opts.Description
+	adapter.ApplyHumaConfig(&cfg, opts)
 	a.huma = humagin.New(a.engine, cfg)
-	return a
 }
 
-// EnableHuma 启用 Huma OpenAPI 文档
-func (a *Adapter) EnableHuma(opts adapter.HumaOptions) {
-	a.WithHuma(opts)
-}
-
-// WithLogger 设置日志记录器
+// WithLogger configures related behavior.
 func (a *Adapter) WithLogger(logger *slog.Logger) *Adapter {
 	a.logger = logger
 	return a
 }
 
-// Name 返回适配器名称
+// Name returns related data.
 func (a *Adapter) Name() string {
 	return "gin"
 }
 
-// Handle 注册业务处理函数
+// Handle registers related handlers.
 func (a *Adapter) Handle(method, path string, handler adapter.HandlerFunc) {
 	a.group.Handle(method, path, a.wrapHandler(handler))
 }
 
-// Group 创建路由组
+// Group creates related functionality.
 func (a *Adapter) Group(prefix string) adapter.Adapter {
 	return &Adapter{
 		engine:  a.engine,
@@ -86,24 +80,24 @@ func (a *Adapter) Group(prefix string) adapter.Adapter {
 	}
 }
 
-// ServeHTTP 实现 http.Handler 接口
+// ServeHTTP documents related behavior.
 func (a *Adapter) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	a.engine.ServeHTTP(w, r)
 }
 
-// Engine 返回 Gin 引擎
-// 通过此方法可以直接使用 Gin 的中间件生态
-// 例如：adapter.Engine().Use(gin.Logger(), yourMiddleware...)
-func (a *Adapter) Engine() *gin.Engine {
+// Router returns related data.
+// Note.
+// Note.
+func (a *Adapter) Router() *gin.Engine {
 	return a.engine
 }
 
-// Listen 启动 Gin 服务。
+// Listen starts related services.
 func (a *Adapter) Listen(addr string) error {
 	return a.engine.Run(addr)
 }
 
-// ListenContext 启动 Gin 服务并在 ctx 结束时优雅关闭。
+// ListenContext starts related services.
 func (a *Adapter) ListenContext(ctx context.Context, addr string) error {
 	if ctx == nil {
 		ctx = context.Background()
@@ -139,7 +133,7 @@ func (a *Adapter) ListenContext(ctx context.Context, addr string) error {
 	}
 }
 
-// wrapHandler 包装处理函数为 Gin 格式
+// wrapHandler wraps related logic.
 func (a *Adapter) wrapHandler(handler adapter.HandlerFunc) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		params := make(map[string]string, len(c.Params))
@@ -161,12 +155,12 @@ func (a *Adapter) wrapHandler(handler adapter.HandlerFunc) gin.HandlerFunc {
 	}
 }
 
-// HumaAPI 返回 Huma API
+// HumaAPI returns related data.
 func (a *Adapter) HumaAPI() huma.API {
 	return a.huma
 }
 
-// HasHuma 检查是否启用了 Huma
+// HasHuma checks related state.
 func (a *Adapter) HasHuma() bool {
 	return a.huma != nil
 }

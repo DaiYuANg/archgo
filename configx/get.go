@@ -4,7 +4,7 @@ import "errors"
 
 var errNilConfig = errors.New("config is nil")
 
-// GetAs 读取并转换指定路径配置为目标类型。
+// GetAs converts related values.
 func GetAs[T any](cfg *Config, path string) (T, error) {
 	var zero T
 	if cfg == nil {
@@ -18,7 +18,7 @@ func GetAs[T any](cfg *Config, path string) (T, error) {
 	return out, nil
 }
 
-// GetAsOr 读取并转换指定路径配置，失败时返回回退值。
+// GetAsOr returns related data.
 func GetAsOr[T any](cfg *Config, path string, fallback T) T {
 	if cfg == nil {
 		return fallback
@@ -34,7 +34,7 @@ func GetAsOr[T any](cfg *Config, path string, fallback T) T {
 	return out
 }
 
-// MustGetAs 读取并转换指定路径配置，失败时 panic。
+// MustGetAs converts related values.
 func MustGetAs[T any](cfg *Config, path string) T {
 	out, err := GetAs[T](cfg, path)
 	if err != nil {

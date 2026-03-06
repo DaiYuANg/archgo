@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"reflect"
 	"sync"
+
+	"github.com/samber/lo"
 )
 
 // Event is the common event contract for strongly typed publish/subscribe.
@@ -41,11 +43,11 @@ type Bus struct {
 // New creates a new Bus.
 func New(opts ...Option) *Bus {
 	cfg := defaultOptions()
-	for _, opt := range opts {
+	lo.ForEach(opts, func(opt Option, _ int) {
 		if opt != nil {
 			opt(&cfg)
 		}
-	}
+	})
 
 	b := &Bus{
 		subsByType: make(map[reflect.Type]map[uint64]*subscription),
@@ -75,11 +77,11 @@ func Subscribe[T Event](b *Bus, handler func(context.Context, T) error, opts ...
 	}
 
 	cfg := defaultSubscribeOptions()
-	for _, opt := range opts {
+	lo.ForEach(opts, func(opt SubscribeOption, _ int) {
 		if opt != nil {
 			opt(&cfg)
 		}
-	}
+	})
 
 	eventType := reflect.TypeFor[T]()
 	base := func(ctx context.Context, event Event) error {
@@ -218,11 +220,9 @@ func (b *Bus) SubscriberCount() int {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
 
-	total := 0
-	for _, byID := range b.subsByType {
-		total += len(byID)
-	}
-	return total
+	return lo.SumBy(lo.Values(b.subsByType), func(byID map[uint64]*subscription) int {
+		return len(byID)
+	})
 }
 
 func (b *Bus) workerLoop() {
@@ -246,11 +246,12 @@ func (b *Bus) snapshotHandlersByEventTypeLocked(eventType reflect.Type) []Handle
 		return nil
 	}
 
-	out := make([]HandlerFunc, 0, len(byID))
-	for _, sub := range byID {
-		out = append(out, sub.handler)
-	}
-	return out
+	return lo.Map(lo.Values(byID), func(sub *subscription, _ int) HandlerFunc {
+		if sub == nil {
+			return nil
+		}
+		return sub.handler
+	})
 }
 
 func (b *Bus) dispatch(ctx context.Context, event Event, handlers []HandlerFunc) error {
@@ -272,15 +273,13 @@ func (b *Bus) dispatch(ctx context.Context, event Event, handlers []HandlerFunc)
 }
 
 func (b *Bus) dispatchSerial(ctx context.Context, event Event, handlers []HandlerFunc) error {
-	var errs []error
-	for _, handler := range handlers {
+	errs := lo.FilterMap(handlers, func(handler HandlerFunc, _ int) (error, bool) {
 		if handler == nil {
-			continue
+			return nil, false
 		}
-		if err := handler(ctx, event); err != nil {
-			errs = append(errs, err)
-		}
-	}
+		err := handler(ctx, event)
+		return err, err != nil
+	})
 	return errors.Join(errs...)
 }
 
@@ -288,9 +287,9 @@ func (b *Bus) dispatchParallel(ctx context.Context, event Event, handlers []Hand
 	errCh := make(chan error, len(handlers))
 	var wg sync.WaitGroup
 
-	for _, handler := range handlers {
+	lo.ForEach(handlers, func(handler HandlerFunc, _ int) {
 		if handler == nil {
-			continue
+			return
 		}
 		wg.Add(1)
 		go func(h HandlerFunc) {
@@ -299,7 +298,7 @@ func (b *Bus) dispatchParallel(ctx context.Context, event Event, handlers []Hand
 				errCh <- err
 			}
 		}(handler)
-	}
+	})
 
 	wg.Wait()
 	close(errCh)

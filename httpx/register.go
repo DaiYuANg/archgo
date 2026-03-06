@@ -2,57 +2,57 @@ package httpx
 
 import (
 	"context"
+	"errors"
 	"fmt"
-	"net/http"
 	"reflect"
 	"runtime"
 	"strings"
 
-	"github.com/DaiYuANg/arcgo/httpx/adapter"
 	"github.com/danielgtaylor/huma/v2"
+	"github.com/samber/lo"
 )
 
-// Route 注册泛型强类型路由。
+// Route registers related handlers.
 func Route[I, O any](s *Server, method, path string, handler TypedHandler[I, O], operationOptions ...OperationOption) error {
 	return registerTypedWithPrefix(s, "", method, path, handler, operationOptions...)
 }
 
-// Get 注册 GET 路由。
+// Get registers related handlers.
 func Get[I, O any](s *Server, path string, handler TypedHandler[I, O], operationOptions ...OperationOption) error {
-	return Route(s, http.MethodGet, path, handler, operationOptions...)
+	return Route(s, MethodGet, path, handler, operationOptions...)
 }
 
-// Post 注册 POST 路由。
+// Post registers related handlers.
 func Post[I, O any](s *Server, path string, handler TypedHandler[I, O], operationOptions ...OperationOption) error {
-	return Route(s, http.MethodPost, path, handler, operationOptions...)
+	return Route(s, MethodPost, path, handler, operationOptions...)
 }
 
-// Put 注册 PUT 路由。
+// Put registers related handlers.
 func Put[I, O any](s *Server, path string, handler TypedHandler[I, O], operationOptions ...OperationOption) error {
-	return Route(s, http.MethodPut, path, handler, operationOptions...)
+	return Route(s, MethodPut, path, handler, operationOptions...)
 }
 
-// Patch 注册 PATCH 路由。
+// Patch registers related handlers.
 func Patch[I, O any](s *Server, path string, handler TypedHandler[I, O], operationOptions ...OperationOption) error {
-	return Route(s, http.MethodPatch, path, handler, operationOptions...)
+	return Route(s, MethodPatch, path, handler, operationOptions...)
 }
 
-// Delete 注册 DELETE 路由。
+// Delete registers related handlers.
 func Delete[I, O any](s *Server, path string, handler TypedHandler[I, O], operationOptions ...OperationOption) error {
-	return Route(s, http.MethodDelete, path, handler, operationOptions...)
+	return Route(s, MethodDelete, path, handler, operationOptions...)
 }
 
-// Head 注册 HEAD 路由。
+// Head registers related handlers.
 func Head[I, O any](s *Server, path string, handler TypedHandler[I, O], operationOptions ...OperationOption) error {
-	return Route(s, http.MethodHead, path, handler, operationOptions...)
+	return Route(s, MethodHead, path, handler, operationOptions...)
 }
 
-// Options 注册 OPTIONS 路由。
+// Options registers related handlers.
 func Options[I, O any](s *Server, path string, handler TypedHandler[I, O], operationOptions ...OperationOption) error {
-	return Route(s, http.MethodOptions, path, handler, operationOptions...)
+	return Route(s, MethodOptions, path, handler, operationOptions...)
 }
 
-// GroupRoute 在分组下注册泛型路由。
+// GroupRoute registers related handlers.
 func GroupRoute[I, O any](g *Group, method, path string, handler TypedHandler[I, O], operationOptions ...OperationOption) error {
 	if g == nil || g.server == nil {
 		return fmt.Errorf("%w: route group is nil", ErrRouteNotRegistered)
@@ -60,29 +60,29 @@ func GroupRoute[I, O any](g *Group, method, path string, handler TypedHandler[I,
 	return registerTypedWithPrefix(g.server, g.prefix, method, path, handler, operationOptions...)
 }
 
-// GroupGet 在分组下注册 GET 路由。
+// GroupGet registers related handlers.
 func GroupGet[I, O any](g *Group, path string, handler TypedHandler[I, O], operationOptions ...OperationOption) error {
-	return GroupRoute(g, http.MethodGet, path, handler, operationOptions...)
+	return GroupRoute(g, MethodGet, path, handler, operationOptions...)
 }
 
-// GroupPost 在分组下注册 POST 路由。
+// GroupPost registers related handlers.
 func GroupPost[I, O any](g *Group, path string, handler TypedHandler[I, O], operationOptions ...OperationOption) error {
-	return GroupRoute(g, http.MethodPost, path, handler, operationOptions...)
+	return GroupRoute(g, MethodPost, path, handler, operationOptions...)
 }
 
-// GroupPut 在分组下注册 PUT 路由。
+// GroupPut registers related handlers.
 func GroupPut[I, O any](g *Group, path string, handler TypedHandler[I, O], operationOptions ...OperationOption) error {
-	return GroupRoute(g, http.MethodPut, path, handler, operationOptions...)
+	return GroupRoute(g, MethodPut, path, handler, operationOptions...)
 }
 
-// GroupPatch 在分组下注册 PATCH 路由。
+// GroupPatch registers related handlers.
 func GroupPatch[I, O any](g *Group, path string, handler TypedHandler[I, O], operationOptions ...OperationOption) error {
-	return GroupRoute(g, http.MethodPatch, path, handler, operationOptions...)
+	return GroupRoute(g, MethodPatch, path, handler, operationOptions...)
 }
 
-// GroupDelete 在分组下注册 DELETE 路由。
+// GroupDelete registers related handlers.
 func GroupDelete[I, O any](g *Group, path string, handler TypedHandler[I, O], operationOptions ...OperationOption) error {
-	return GroupRoute(g, http.MethodDelete, path, handler, operationOptions...)
+	return GroupRoute(g, MethodDelete, path, handler, operationOptions...)
 }
 
 func registerTypedWithPrefix[I, O any](s *Server, prefix, method, path string, handler TypedHandler[I, O], operationOptions ...OperationOption) error {
@@ -104,21 +104,19 @@ func registerTypedWithPrefix[I, O any](s *Server, prefix, method, path string, h
 		Method:      upperMethod,
 		Path:        fullPath,
 	}
-	for _, apply := range operationOptions {
+	lo.ForEach(operationOptions, func(apply OperationOption, _ int) {
 		if apply != nil {
 			apply(&op)
 		}
-	}
+	})
 
-	if s.humaOpts.Enabled {
-		api := s.adapter.HumaAPI()
-		if api == nil {
-			return fmt.Errorf("%w: adapter %q does not expose Huma API", ErrAdapterNotFound, s.adapter.Name())
-		}
-		huma.Register[I, O](api, op, handler)
-	} else {
-		s.adapter.Handle(upperMethod, fullPath, wrapTypedHandler(s, handler))
+	validatedHandler := withInputValidation(s, handler)
+
+	api := s.adapter.HumaAPI()
+	if api == nil {
+		return fmt.Errorf("%w: adapter %q does not expose Huma API", ErrAdapterNotFound, s.adapter.Name())
 	}
+	huma.Register[I, O](api, op, validatedHandler)
 
 	s.addRoute(RouteInfo{
 		Method:      upperMethod,
@@ -132,61 +130,46 @@ func registerTypedWithPrefix[I, O any](s *Server, prefix, method, path string, h
 	return nil
 }
 
-func wrapTypedHandler[I, O any](s *Server, handler TypedHandler[I, O]) adapter.HandlerFunc {
-	return func(ctx context.Context, w http.ResponseWriter, r *http.Request) error {
+func withInputValidation[I, O any](s *Server, handler TypedHandler[I, O]) TypedHandler[I, O] {
+	if handler == nil || s == nil {
+		return handler
+	}
+
+	return func(ctx context.Context, input *I) (out *O, err error) {
 		defer func() {
 			if recovered := recover(); recovered != nil {
-				s.writeHandlerError(w, r, NewError(http.StatusInternalServerError, fmt.Sprintf("panic in handler: %v", recovered)))
+				out = nil
+				err = huma.Error500InternalServerError(fmt.Sprintf("panic in handler: %v", recovered))
 			}
 		}()
 
-		in := new(I)
-		if err := bindRequestToInput(r, in); err != nil {
-			s.writeHandlerError(w, r, NewError(http.StatusBadRequest, "invalid request input", err))
-			return nil
+		if err = s.validateInput(input); err != nil {
+			message := validationErrorMessage(err)
+			return nil, huma.Error400BadRequest(message, err)
 		}
 
-		out, err := handler(ctx, in)
+		out, err = handler(ctx, input)
 		if err != nil {
-			s.writeHandlerError(w, r, err)
-			return nil
+			return nil, toHumaError(err)
 		}
+		return out, nil
+	}
+}
 
-		if out == nil {
-			w.WriteHeader(http.StatusNoContent)
-			return nil
-		}
-
-		status := statusCodeFrom(out)
-		writeJSON(w, status, out)
+func toHumaError(err error) error {
+	if err == nil {
 		return nil
 	}
-}
 
-func statusCodeFrom(v any) int {
-	type statusCoder interface {
-		StatusCode() int
-	}
-	if sc, ok := v.(statusCoder); ok {
-		code := sc.StatusCode()
-		if code > 0 {
-			return code
+	var httpxErr *Error
+	if errors.As(err, &httpxErr) {
+		if httpxErr.Err != nil {
+			return huma.NewError(httpxErr.Code, httpxErr.Message, httpxErr.Err)
 		}
-	}
-	return http.StatusOK
-}
-
-func shouldDecodeBody(r *http.Request) bool {
-	if r == nil || r.Body == nil || r.Body == http.NoBody {
-		return false
+		return huma.NewError(httpxErr.Code, httpxErr.Message)
 	}
 
-	switch r.Method {
-	case http.MethodGet, http.MethodHead, http.MethodDelete, http.MethodOptions:
-		return false
-	default:
-		return true
-	}
+	return err
 }
 
 func handlerName(fn any) string {

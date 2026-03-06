@@ -1,364 +1,251 @@
-# HTTPX - 灵活的 HTTP 框架适配器
+# httpx
 
-`httpx` 是一个灵活的 HTTP 框架适配器层，支持多种流行的 Go Web 框架。
+`httpx` is a typed HTTP abstraction layer for multiple Go web frameworks.
 
-## 设计理念
+[Chinese](./README_ZH.md)
 
-**核心思路：减少样板代码，方便集成和注册 route**
+## What You Get
 
-- **httpx 的职责**：统一管理路由注册、端点映射、OpenAPI 文档集成
-- **中间件的职责**：直接使用各框架的原生方式注册，享受完整的框架生态
+- Unified typed route registration (`Get`, `Post`, `Put`, `Patch`, `Delete`, ...)
+- Adapter-based framework integration (`std`, `gin`, `fiber`, `echo`)
+- Huma request/response handling and OpenAPI integration by default
+- Optional global request validation via `go-playground/validator`
+- Route grouping and route introspection APIs
 
-## 包结构
+## Core Architecture
 
-```
-httpx/
-├── adapter/              # 适配器子包（按需引入）
-│   ├── gin/             # Gin 框架适配器
-│   ├── fiber/           # Fiber 框架适配器
-│   ├── echo/            # Echo 框架适配器
-│   └── std/             # 标准库适配器（基于 chi）
-├── examples/            # 示例代码
-├── huma/               # Huma OpenAPI 集成
-├── middleware/         # 通用中间件（可选）
-└── options/            # 配置选项
-```
+- `Server`: central routing/runtime object
+- `adapter/*`: framework bridges
+- Typed route APIs: `httpx.Get/Post/...`
+- Group route APIs: `httpx.GroupGet/...`
 
-## 特性
+## 0-to-1 Runnable Example
 
-- **按需引入**：每个适配器都是独立的子包，只引入你需要的框架依赖
-- **原生中间件支持**：通过 `Engine()`、`App()`、`Router()` 方法直接使用框架原生的中间件生态
-- **统一接口**：所有适配器实现相同的接口，可以无缝切换
-- **Huma OpenAPI 支持**：所有适配器都支持 Huma OpenAPI 文档生成
+- Quickstart directory: [httpx/examples/quickstart](./examples/quickstart)
+- Run from repo root:
 
-## 安装
-
-根据你需要的框架选择安装：
-
-### 使用 Gin
 ```bash
-go get github.com/DaiYuANg/arcgo/httpx/adapter/gin
+go run ./httpx/examples/quickstart
 ```
 
-### 使用 Fiber
-```bash
-go get github.com/DaiYuANg/arcgo/httpx/adapter/fiber
-```
-
-### 使用 Echo
-```bash
-go get github.com/DaiYuANg/arcgo/httpx/adapter/echo
-```
-
-### 使用标准库
-```bash
-go get github.com/DaiYuANg/arcgo/httpx/adapter/std
-```
-
-## 使用示例
-
-### Gin 示例
+## Minimal Setup (std/chi)
 
 ```go
-package main
+a := std.New()
+a.Router().Use(middleware.Logger, middleware.Recoverer)
 
-import (
-    "context"
-    "net/http"
-
-    "github.com/DaiYuANg/arcgo/httpx"
-    "github.com/DaiYuANg/arcgo/httpx/adapter/gin"
-    "github.com/gin-gonic/gin"
+s := httpx.NewServer(
+    httpx.WithAdapter(a),
+    httpx.WithBasePath("/api"),
+    httpx.WithOpenAPIInfo("My API", "1.0.0", "Service API"),
 )
 
-type UserEndpoint struct {
-    httpx.BaseEndpoint
+_ = httpx.Get(s, "/health", func(ctx context.Context, input *struct{}) (*HealthOutput, error) {
+    return &HealthOutput{Body: struct{ Status string `json:"status"` }{Status: "ok"}}, nil
+})
+
+_ = s.ListenAndServe(":8080")
+```
+
+## Typed Input Patterns
+
+### 1) Path params
+
+```go
+type GetUserInput struct {
+    ID int `path:"id"`
 }
 
-func (e *UserEndpoint) ListUsers(ctx context.Context, w http.ResponseWriter, r *http.Request) error {
-    e.Success(w, map[string]interface{}{
-        "users": []string{"Alice", "Bob", "Charlie"},
-    })
-    return nil
-}
+_ = httpx.Get(s, "/users/{id}", func(ctx context.Context, in *GetUserInput) (*UserOutput, error) {
+    // in.ID from path
+    return out, nil
+})
+```
 
-func main() {
-    // 1. 创建 Gin 适配器
-    ginAdapter := gin.New()
-    
-    // 2. 【重要】使用 Gin 原生方式注册中间件
-    // 你可以使用任何 Gin 生态的中间件
-    ginAdapter.Engine().Use(
-        gin.Logger(),
-        gin.Recovery(),
-        cors.Default(), // github.com/gin-contrib/cors
-    )
-    
-    // 3. 启用 Huma OpenAPI 文档（可选）
-    ginAdapter.WithHuma(httpx.ToAdapterHumaOptions(httpx.HumaOptions{
-        Enabled:     true,
-        Title:       "My API",
-        Version:     "1.0.0",
-    }))
+### 2) Query params
 
-    // 4. 创建服务器并注册路由
-    server := httpx.NewServer(
-        httpx.WithAdapter(ginAdapter),
-        httpx.WithPrintRoutes(true),
-    )
-    _ = server.Register(&UserEndpoint{})
-    server.ListenAndServe(":8080")
+```go
+type ListUsersInput struct {
+    Page int `query:"page"`
+    Size int `query:"size"`
 }
 ```
 
-### Fiber 示例
+### 3) Headers
 
 ```go
-package main
-
-import (
-    "context"
-    "net/http"
-
-    "github.com/DaiYuANg/arcgo/httpx"
-    "github.com/DaiYuANg/arcgo/httpx/adapter/fiber"
-)
-
-type UserEndpoint struct {
-    httpx.BaseEndpoint
-}
-
-func (e *UserEndpoint) ListUsers(ctx context.Context, w http.ResponseWriter, r *http.Request) error {
-    e.Success(w, map[string]interface{}{
-        "users": []string{"Alice", "Bob", "Charlie"},
-    })
-    return nil
-}
-
-func main() {
-    // 1. 创建 Fiber 适配器
-    fiberAdapter := fiber.New()
-    
-    // 2. 【重要】使用 Fiber 原生方式注册中间件
-    fiberAdapter.App().Use(
-        // fiber.Logger(),
-        // fiber.Recover(),
-        // cors.New(), // github.com/gofiber/fiber/v2/middleware/cors
-    )
-    
-    // 3. 启用 Huma OpenAPI 文档
-    fiberAdapter.WithHuma(httpx.ToAdapterHumaOptions(httpx.HumaOptions{
-        Enabled:     true,
-        Title:       "My API",
-        Version:     "1.0.0",
-    }))
-
-    // 4. 创建服务器并注册路由
-    server := httpx.NewServer(
-        httpx.WithAdapter(fiberAdapter),
-    )
-    _ = server.Register(&UserEndpoint{})
-    server.ListenAndServe(":8080")
+type SecureInput struct {
+    RequestID string `header:"X-Request-Id"`
 }
 ```
 
-### Echo 示例
+### 4) JSON body
 
 ```go
-package main
-
-import (
-    "context"
-    "net/http"
-
-    "github.com/DaiYuANg/arcgo/httpx"
-    "github.com/DaiYuANg/arcgo/httpx/adapter/echo"
-)
-
-type UserEndpoint struct {
-    httpx.BaseEndpoint
-}
-
-func (e *UserEndpoint) ListUsers(ctx context.Context, w http.ResponseWriter, r *http.Request) error {
-    e.Success(w, map[string]interface{}{
-        "users": []string{"Alice", "Bob", "Charlie"},
-    })
-    return nil
-}
-
-func main() {
-    // 1. 创建 Echo 适配器
-    echoAdapter := echo.New()
-    
-    // 2. 【重要】使用 Echo 原生方式注册中间件
-    echoAdapter.Engine().Use(
-        // echo.Logger(),
-        // echo.Recover(),
-        // middleware.CORS(), // github.com/labstack/echo/v4/middleware
-    )
-    
-    // 3. 启用 Huma OpenAPI 文档
-    echoAdapter.WithHuma(httpx.ToAdapterHumaOptions(httpx.HumaOptions{
-        Enabled:     true,
-        Title:       "My API",
-        Version:     "1.0.0",
-    }))
-
-    // 4. 创建服务器并注册路由
-    server := httpx.NewServer(
-        httpx.WithAdapter(echoAdapter),
-    )
-    _ = server.Register(&UserEndpoint{})
-    server.ListenAndServe(":8080")
+type CreateUserInput struct {
+    Body struct {
+        Name  string `json:"name" validate:"required,min=2,max=64"`
+        Email string `json:"email" validate:"required,email"`
+    }
 }
 ```
 
-### 标准库示例
+## Route Groups
 
 ```go
-package main
-
-import (
-    "context"
-    "net/http"
-
-    "github.com/DaiYuANg/arcgo/httpx"
-    "github.com/DaiYuANg/arcgo/httpx/adapter/std"
-    "github.com/go-chi/chi/v5/middleware"
-)
-
-type UserEndpoint struct {
-    httpx.BaseEndpoint
-}
-
-func (e *UserEndpoint) ListUsers(ctx context.Context, w http.ResponseWriter, r *http.Request) error {
-    e.Success(w, map[string]interface{}{
-        "users": []string{"Alice", "Bob", "Charlie"},
-    })
-    return nil
-}
-
-func main() {
-    // 1. 创建 std 适配器（基于 chi）
-    stdAdapter := std.New()
-    
-    // 2. 【重要】使用 chi 原生方式注册中间件
-    stdAdapter.Router().Use(
-        middleware.Logger,
-        middleware.Recoverer,
-        middleware.RequestID,
-        middleware.CORS(), // github.com/go-chi/cors
-    )
-    
-    // 3. 启用 Huma OpenAPI 文档
-    stdAdapter.WithHuma(httpx.ToAdapterHumaOptions(httpx.HumaOptions{
-        Enabled:     true,
-        Title:       "My API",
-        Version:     "1.0.0",
-    }))
-
-    // 4. 创建服务器并注册路由
-    server := httpx.NewServer(
-        httpx.WithAdapter(stdAdapter),
-    )
-    _ = server.Register(&UserEndpoint{})
-    server.ListenAndServe(":8080")
-}
+api := s.Group("/v1")
+_ = httpx.GroupGet(api, "/users/{id}", getUserHandler)
+_ = httpx.GroupPost(api, "/users", createUserHandler)
 ```
 
-## 中间件使用
+## Validation Modes
 
-**核心设计**：httpx 不强制提供中间件，而是让你直接使用框架原生的中间件生态。
-
-### Gin 中间件
+### Built-in validator
 
 ```go
-ginAdapter := gin.New()
-ginAdapter.Engine().Use(
-    gin.Logger(),
-    gin.Recovery(),
-    cors.Default(),              // github.com/gin-contrib/cors
-    jwt.New(...),                // github.com/gin-contrib/jwt
-    gzip.Gzip(gzip.DefaultCompression), // github.com/gin-contrib/gzip
+s := httpx.NewServer(
+    httpx.WithAdapter(a),
+    httpx.WithValidation(),
 )
 ```
 
-### Fiber 中间件
+### Custom validator instance
 
 ```go
-fiberAdapter := fiber.New()
-fiberAdapter.App().Use(
-    fiber.Logger(),
-    fiber.Recover(),
-    cors.New(),                  // github.com/gofiber/fiber/v2/middleware/cors
-    limiter.New(),               // github.com/gofiber/fiber/v2/middleware/limiter
-    helmet.New(),                // github.com/gofiber/helmet
+v := validator.New(validator.WithRequiredStructEnabled())
+s := httpx.NewServer(
+    httpx.WithAdapter(a),
+    httpx.WithValidator(v),
 )
 ```
 
-### Echo 中间件
+Validation failures are converted to HTTP 400 with structured error output through Huma.
+
+## OpenAPI / Docs Control
 
 ```go
-echoAdapter := echo.New()
-echoAdapter.Engine().Use(
-    echo.Logger(),
-    echo.Recover(),
-    middleware.CORS(),           // github.com/labstack/echo/v4/middleware
-    middleware.RateLimiter(),    // github.com/labstack/echo/v4/middleware
-    middleware.Secure(),
+s := httpx.NewServer(
+    httpx.WithAdapter(a),
+    httpx.WithOpenAPIInfo("My API", "1.0.0", "Public API"),
+    httpx.WithOpenAPIDocs(false), // disable /docs and /openapi.* in production
 )
 ```
 
-### Chi 中间件
+## Error Mapping
+
+Handlers can return standard errors or `httpx.Error`:
 
 ```go
-stdAdapter := std.New()
-stdAdapter.Router().Use(
-    middleware.Logger,
-    middleware.Recoverer,
-    middleware.RequestID,
-    middleware.Timeout(),
-    cors.Handler(cors.Options{}), // github.com/go-chi/cors
-)
+return nil, httpx.NewError(http.StatusForbidden, "forbidden")
 ```
 
-## 配置选项
+`httpx.Error` is converted to Huma HTTP errors with your status code.
 
-使用 `options` 包进行统一配置：
+## Framework Middleware Integration
+
+Register middleware directly through native adapter objects:
+
+- `std`: `adapter.Router().Use(...)`
+- `gin`: `adapter.Router().Use(...)`
+- `fiber`: `adapter.Router().Use(...)`
+- `echo`: `adapter.Router().Use(...)`
+
+## Server Introspection APIs
+
+- `GetRoutes()`
+- `GetRoutesByMethod(method)`
+- `GetRoutesByPath(prefix)`
+- `HasRoute(method, path)`
+- `RouteCount()`
+
+Useful for runtime diagnostics or test assertions.
+
+## Testing Patterns
 
 ```go
-import "github.com/DaiYuANg/arcgo/httpx/options"
+req := httptest.NewRequest(http.MethodGet, "/api/health", nil)
+rec := httptest.NewRecorder()
+s.ServeHTTP(rec, req)
 
-serverOpts := options.DefaultServerOptions()
-serverOpts.Logger = slogLogger
-serverOpts.BasePath = "/api"
-serverOpts.PrintRoutes = true
-serverOpts.HumaEnabled = true
-serverOpts.HumaTitle = "My API"
-
-// 创建适配器并注册中间件
-stdAdapter := std.New()
-stdAdapter.Router().Use(middleware.Logger, middleware.Recoverer)
-
-server := httpx.NewServer(append(serverOpts.Build(), httpx.WithAdapter(stdAdapter))...)
+if rec.Code != http.StatusOK { t.Fatal(rec.Code) }
 ```
 
-## 依赖说明
+Recommended test setup:
 
-- `adapter/gin` - 依赖 `github.com/gin-gonic/gin`
-- `adapter/fiber` - 依赖 `github.com/gofiber/fiber/v2`
-- `adapter/echo` - 依赖 `github.com/labstack/echo/v4`
-- `adapter/std` - 依赖 `github.com/go-chi/chi/v5`
+- Use `std` adapter for simple in-process tests.
+- Assert route registration with `HasRoute` and `GetRoutes`.
+- Test both validation-success and validation-failure paths.
 
-所有适配器都依赖 `github.com/danielgtaylor/huma/v2` 用于 OpenAPI 文档生成。
+## Migration Notes
 
-## 为什么这样设计？
+- Legacy endpoint wrappers were removed.
+- Use typed route APIs directly (`Get/Post/Group*`).
+- Use Huma-style input structs consistently.
 
-1. **减少依赖冲突**：每个适配器独立子包，只引入需要的框架
-2. **完整生态支持**：直接使用框架原生中间件，享受完整的生态系统
-3. **降低维护成本**：不需要为每个框架维护一套中间件
-4. **灵活性**：用户可以根据需求自由选择中间件组合
+## Advanced Option Builder
 
-## License
+You can build server options through `httpx/options` package when assembling config-driven apps.
 
-MIT License
+```go
+opts := options.DefaultServerOptions()
+opts.BasePath = "/api"
+opts.EnableValidation = true
+
+s := httpx.NewServer(append(opts.Build(), httpx.WithAdapter(a))...)
+```
+
+## FAQ
+
+### Do I have to use Huma-style input structs?
+
+Yes for typed route handlers in this package.  
+`httpx` standardizes on Huma input/output modeling to keep behavior consistent across adapters.
+
+### Can I disable OpenAPI docs in production?
+
+Yes. Use `WithOpenAPIDocs(false)` to disable `/docs` and `/openapi.*` endpoints.
+
+### Should I use adapter middleware wrappers from `httpx`?
+
+No. Register middleware natively on each framework adapter engine/app/router.
+
+### How do I access path/query/header parameters?
+
+Declare them in input struct tags (`path`, `query`, `header`).  
+Huma parsing binds values into the typed input object automatically.
+
+## Troubleshooting
+
+### Route returns 400 unexpectedly
+
+Common causes:
+
+- Input tag mismatch (`path:\"id\"` but route uses `{userId}`).
+- Validation failure (`validate` tags fail).
+- Request body shape does not match `Body` struct.
+
+### Docs endpoints not visible
+
+Check:
+
+- `WithOpenAPIDocs(true)` is enabled.
+- Reverse proxy/path prefix settings are correct.
+- Adapter has Huma enabled (default server path does this automatically).
+
+### Framework middleware not firing
+
+Middleware must be attached to the framework adapter itself (for example `ginAdapter.Router().Use(...)`).  
+Adding middleware in unrelated HTTP stack layers will not affect adapter route chain.
+
+### Different adapters behave differently for edge HTTP semantics
+
+Some low-level framework behaviors differ (error propagation, request body reuse, context internals).  
+Keep handler logic adapter-agnostic and avoid depending on framework-specific side effects.
+
+## Anti-Patterns
+
+- Mixing manual framework binding with typed Huma input for the same route.
+- Returning ad-hoc response types without stable schema for public APIs.
+- Treating validation as optional for externally-facing write endpoints.
+- Building a single giant route file instead of grouped bounded contexts.
+- Coupling business logic directly to adapter-specific request objects.

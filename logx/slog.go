@@ -7,8 +7,8 @@ import (
 	slogzerolog "github.com/samber/slog-zerolog/v2"
 )
 
-// NewSlog 从 Logger 创建 slog 实例
-// 自动设置 source code 位置
+// NewSlog creates related functionality.
+// Note.
 func NewSlog(l *Logger) *slog.Logger {
 	if l == nil {
 		return slog.Default()
@@ -20,50 +20,50 @@ func NewSlog(l *Logger) *slog.Logger {
 	return l.slogLogger
 }
 
-// NewSlogWithLevel 创建带级别控制的 slog 实例
+// NewSlogWithLevel creates related functionality.
 func NewSlogWithLevel(l *Logger, level slog.Level) *slog.Logger {
 	return buildSlog(l, level)
 }
 
-// NewSlogWithContext 创建带 context 的 slog 实例
+// NewSlogWithContext creates related functionality.
 func NewSlogWithContext(ctx context.Context, l *Logger) *slog.Logger {
 	_ = ctx
 	return NewSlog(l)
 }
 
-// SetDefaultSlog 设置全局默认 slog
+// SetDefaultSlog configures related behavior.
 func SetDefaultSlog(l *Logger) *slog.Logger {
 	logger := NewSlog(l)
 	slog.SetDefault(logger)
 	return logger
 }
 
-// SlogLogger 便捷方法：直接从 Logger 获取 slog 接口
+// SlogLogger retrieves related data.
 func (l *Logger) SlogLogger() *slog.Logger {
 	return NewSlog(l)
 }
 
-// SlogDebug 记录 debug 级别日志（通过 slog）
+// SlogDebug logs related events.
 func (l *Logger) SlogDebug(msg string, args ...any) {
 	l.SlogLogger().Debug(msg, args...)
 }
 
-// SlogInfo 记录 info 级别日志（通过 slog）
+// SlogInfo logs related events.
 func (l *Logger) SlogInfo(msg string, args ...any) {
 	l.SlogLogger().Info(msg, args...)
 }
 
-// SlogWarn 记录 warn 级别日志（通过 slog）
+// SlogWarn logs related events.
 func (l *Logger) SlogWarn(msg string, args ...any) {
 	l.SlogLogger().Warn(msg, args...)
 }
 
-// SlogError 记录 error 级别日志（通过 slog）
+// SlogError logs related events.
 func (l *Logger) SlogError(msg string, args ...any) {
 	l.SlogLogger().Error(msg, args...)
 }
 
-// SlogLogAttrs 记录带属性的日志（通过 slog）
+// SlogLogAttrs logs related events.
 func (l *Logger) SlogLogAttrs(ctx context.Context, level slog.Level, msg string, attrs ...slog.Attr) {
 	l.SlogLogger().LogAttrs(ctx, level, msg, attrs...)
 }

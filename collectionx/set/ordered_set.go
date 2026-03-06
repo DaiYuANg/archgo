@@ -1,6 +1,10 @@
 package set
 
-import "slices"
+import (
+	"slices"
+
+	"github.com/samber/lo"
+)
 
 // OrderedSet keeps insertion order of unique items.
 // Zero value is ready to use.
@@ -24,14 +28,14 @@ func (s *OrderedSet[T]) Add(items ...T) {
 	}
 	s.ensureInit()
 
-	for _, item := range items {
+	lo.ForEach(items, func(item T, _ int) {
 		if _, exists := s.items[item]; exists {
-			continue
+			return
 		}
 		s.order = append(s.order, item)
 		s.items[item] = struct{}{}
 		s.index[item] = len(s.order) - 1
-	}
+	})
 }
 
 // Remove deletes item and reports whether it existed.
@@ -123,14 +127,8 @@ func (s *OrderedSet[T]) Clone() *OrderedSet[T] {
 		return out
 	}
 	out.order = slices.Clone(s.order)
-	out.items = make(map[T]struct{}, len(s.items))
-	for item := range s.items {
-		out.items[item] = struct{}{}
-	}
-	out.index = make(map[T]int, len(s.index))
-	for item, idx := range s.index {
-		out.index[item] = idx
-	}
+	out.items = lo.Assign(map[T]struct{}{}, s.items)
+	out.index = lo.Assign(map[T]int{}, s.index)
 	return out
 }
 

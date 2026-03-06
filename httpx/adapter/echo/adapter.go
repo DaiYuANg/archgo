@@ -15,12 +15,12 @@ import (
 	"github.com/labstack/echo/v4"
 )
 
-// Adapter Echo 框架适配器
+// Adapter documents related behavior.
 //
-// 使用方式：
-// 1. 创建适配器：echoAdapter := echo.New()
-// 2. 注册 Echo 原生中间件：adapter.Engine().Use(yourMiddleware...)
-// 3. 创建 httpx server 并注册路由
+// Note.
+// Note.
+// Note.
+// Note.
 type Adapter struct {
 	engine  *echo.Echo
 	group   *echo.Group
@@ -29,7 +29,7 @@ type Adapter struct {
 	humaCfg adapter.HumaOptions
 }
 
-// New 创建 Echo 适配器
+// New creates related functionality.
 func New(engine ...*echo.Echo) *Adapter {
 	var eng *echo.Echo
 	if len(engine) > 0 {
@@ -45,32 +45,26 @@ func New(engine ...*echo.Echo) *Adapter {
 	}
 }
 
-// WithHuma 启用 Huma OpenAPI 文档
-func (a *Adapter) WithHuma(opts adapter.HumaOptions) *Adapter {
+// ConfigureHuma configures related behavior.
+func (a *Adapter) ConfigureHuma(opts adapter.HumaOptions) {
 	a.humaCfg = opts
 	cfg := huma.DefaultConfig(opts.Title, opts.Version)
-	cfg.Info.Description = opts.Description
+	adapter.ApplyHumaConfig(&cfg, opts)
 	a.huma = humaecho.New(a.engine, cfg)
-	return a
 }
 
-// EnableHuma 启用 Huma OpenAPI 文档
-func (a *Adapter) EnableHuma(opts adapter.HumaOptions) {
-	a.WithHuma(opts)
-}
-
-// WithLogger 设置日志记录器
+// WithLogger configures related behavior.
 func (a *Adapter) WithLogger(logger *slog.Logger) *Adapter {
 	a.logger = logger
 	return a
 }
 
-// Name 返回适配器名称
+// Name returns related data.
 func (a *Adapter) Name() string {
 	return "echo"
 }
 
-// Handle 注册业务处理函数
+// Handle registers related handlers.
 func (a *Adapter) Handle(method, path string, handler adapter.HandlerFunc) {
 	if a.group != nil {
 		a.group.Add(method, path, a.echoHandler(handler))
@@ -79,7 +73,7 @@ func (a *Adapter) Handle(method, path string, handler adapter.HandlerFunc) {
 	}
 }
 
-// Group 创建路由组
+// Group creates related functionality.
 func (a *Adapter) Group(prefix string) adapter.Adapter {
 	var g *echo.Group
 	if a.group != nil {
@@ -97,24 +91,24 @@ func (a *Adapter) Group(prefix string) adapter.Adapter {
 	}
 }
 
-// ServeHTTP 实现 http.Handler 接口
+// ServeHTTP documents related behavior.
 func (a *Adapter) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	a.engine.ServeHTTP(w, r)
 }
 
-// Engine 返回 Echo 引擎
-// 通过此方法可以直接使用 Echo 的中间件生态
-// 例如：adapter.Engine().Use(yourMiddleware...)
-func (a *Adapter) Engine() *echo.Echo {
+// Router returns related data.
+// Note.
+// Note.
+func (a *Adapter) Router() *echo.Echo {
 	return a.engine
 }
 
-// Listen 启动 Echo 服务。
+// Listen starts related services.
 func (a *Adapter) Listen(addr string) error {
 	return a.engine.Start(addr)
 }
 
-// ListenContext 启动 Echo 服务并在 ctx 结束时优雅关闭。
+// ListenContext starts related services.
 func (a *Adapter) ListenContext(ctx context.Context, addr string) error {
 	if ctx == nil {
 		ctx = context.Background()
@@ -145,7 +139,7 @@ func (a *Adapter) ListenContext(ctx context.Context, addr string) error {
 	}
 }
 
-// echoHandler 包装处理函数为 Echo 格式
+// echoHandler wraps related logic.
 func (a *Adapter) echoHandler(handler adapter.HandlerFunc) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		params := make(map[string]string, len(c.ParamNames()))
@@ -166,12 +160,12 @@ func (a *Adapter) echoHandler(handler adapter.HandlerFunc) echo.HandlerFunc {
 	}
 }
 
-// HumaAPI 返回 Huma API
+// HumaAPI returns related data.
 func (a *Adapter) HumaAPI() huma.API {
 	return a.huma
 }
 
-// HasHuma 检查是否启用了 Huma
+// HasHuma checks related state.
 func (a *Adapter) HasHuma() bool {
 	return a.huma != nil
 }

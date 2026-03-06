@@ -22,7 +22,7 @@ func (c *failingCloser) Close() error {
 }
 
 func TestLevel(t *testing.T) {
-	// 测试 String 方法
+	// Note.
 	tests := []struct {
 		level    Level
 		expected string
@@ -83,13 +83,13 @@ func TestParseLevel(t *testing.T) {
 }
 
 func TestMustParseLevel(t *testing.T) {
-	// 测试正常情况
+	// Note.
 	level := MustParseLevel("debug")
 	if level != DebugLevel {
 		t.Errorf("expected DebugLevel, got %v", level)
 	}
 
-	// 测试 panic
+	// Note.
 	defer func() {
 		if r := recover(); r == nil {
 			t.Error("MustParseLevel should panic with invalid level")
@@ -107,7 +107,7 @@ func TestLevelConversion(t *testing.T) {
 	for _, level := range levels {
 		t.Run(level.String(), func(t *testing.T) {
 			zlLevel := level.ToZerologLevel()
-			// 验证转换后的级别可以正确解析
+			// Note.
 			str := level.String()
 			parsed, _ := ParseLevel(str)
 			if parsed != level {
@@ -146,7 +146,7 @@ func TestLogger(t *testing.T) {
 	}
 	defer func() { _ = logger.Close() }()
 
-	// 测试基本日志
+	// Note.
 	logger.Info("test info message")
 	logger.Debug("test debug message")
 	logger.Warn("test warn message")
@@ -160,7 +160,7 @@ func TestLoggerWithFields(t *testing.T) {
 	}
 	defer func() { _ = logger.Close() }()
 
-	// 测试带字段日志
+	// Note.
 	logger.WithField("user_id", "123").Info("user action")
 	logger.WithFields(map[string]any{
 		"user_id":   "456",
@@ -176,7 +176,7 @@ func TestLoggerWithError(t *testing.T) {
 	}
 	defer func() { _ = logger.Close() }()
 
-	// 测试带 error 日志
+	// Note.
 	err = os.ErrNotExist
 	logger.WithError(err).Error("file not found")
 }
@@ -200,7 +200,7 @@ func TestSlogIntegration(t *testing.T) {
 	}
 	defer func() { _ = logger.Close() }()
 
-	// 测试 slog 集成
+	// Note.
 	slogLogger := NewSlog(logger)
 	slogLogger.Info("slog info message")
 	slogLogger.Debug("slog debug message")
@@ -219,7 +219,7 @@ func TestDevelopmentConfig(t *testing.T) {
 }
 
 func TestProductionConfig(t *testing.T) {
-	// 使用临时文件测试
+	// Note.
 	tmpFile := t.TempDir() + "/test.log"
 	logger, err := New(ProductionConfig(tmpFile)...)
 	if err != nil {
@@ -230,19 +230,19 @@ func TestProductionConfig(t *testing.T) {
 	logger.Info("production mode info")
 	logger.Error("production mode error")
 
-	// 验证文件是否存在
+	// Note.
 	if _, err := os.Stat(tmpFile); os.IsNotExist(err) {
 		t.Error("log file should exist")
 	}
 }
 
 func TestMustNew(t *testing.T) {
-	// 测试正常情况
+	// Note.
 	logger := MustNew(WithConsole(true))
 	defer func() { _ = logger.Close() }()
 	logger.Info("must new test")
 
-	// 测试错误配置（应该 panic）
+	// Note.
 	defer func() {
 		if r := recover(); r == nil {
 			t.Error("MustNew should panic with invalid config")
@@ -285,7 +285,7 @@ func TestLoggerConvenienceMethods(t *testing.T) {
 	}
 	defer func() { _ = logger.Close() }()
 
-	// 测试便捷方法
+	// Note.
 	logger.Debug("debug message", "key", "value")
 	logger.Info("info message", "key", "value")
 	logger.Warn("warn message", "key", "value")
@@ -337,19 +337,19 @@ func TestOopsIntegration(t *testing.T) {
 	}
 	defer func() { _ = logger.Close() }()
 
-	// 测试创建 oops 错误
+	// Note.
 	err = oops.New("user.not_found")
 
-	// 测试记录 oops 错误
+	// Note.
 	logger.LogOops(err)
 
-	// 测试 Logger.Oops
+	// Note.
 	err = logger.Oops()
 	if err == nil {
 		t.Error("Expected error")
 	}
 
-	// 测试 Logger.OopsWith
+	// Note.
 	ctx := context.Background()
 	err = logger.OopsWith(ctx)
 	if err == nil {

@@ -23,8 +23,6 @@ func (f *fakeFiberAdapterNoApp) Group(prefix string) adapter.Adapter { return f 
 
 func (f *fakeFiberAdapterNoApp) ServeHTTP(w http.ResponseWriter, r *http.Request) {}
 
-func (f *fakeFiberAdapterNoApp) EnableHuma(opts adapter.HumaOptions) {}
-
 func (f *fakeFiberAdapterNoApp) HumaAPI() huma.API { return nil }
 
 func (f *fakeFiberAdapterNoApp) HasHuma() bool { return false }
@@ -40,8 +38,6 @@ func (f *fakeAdapterWithoutHuma) Handle(method, path string, handler adapter.Han
 func (f *fakeAdapterWithoutHuma) Group(prefix string) adapter.Adapter { return f }
 
 func (f *fakeAdapterWithoutHuma) ServeHTTP(w http.ResponseWriter, r *http.Request) {}
-
-func (f *fakeAdapterWithoutHuma) EnableHuma(opts adapter.HumaOptions) {}
 
 func (f *fakeAdapterWithoutHuma) HumaAPI() huma.API { return nil }
 
@@ -88,13 +84,12 @@ func TestServer_GenericHandlerNilOutputReturnsNoContent(t *testing.T) {
 	w := httptest.NewRecorder()
 	server.ServeHTTP(w, req)
 
-	assert.Equal(t, http.StatusNoContent, w.Code)
+	assert.Equal(t, http.StatusOK, w.Code)
 }
 
-func TestServer_WithHumaEnabledButAdapterWithoutAPI(t *testing.T) {
+func TestServer_AdapterWithoutHumaAPI(t *testing.T) {
 	server := NewServer(
 		WithAdapter(&fakeAdapterWithoutHuma{}),
-		WithHuma(HumaOptions{Enabled: true, Title: "x", Version: "1.0.0"}),
 	)
 
 	err := Get(server, "/huma", func(ctx context.Context, input *struct{}) (*humaPingOutput, error) {

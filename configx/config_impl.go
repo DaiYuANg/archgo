@@ -7,7 +7,7 @@ import (
 	"github.com/knadh/koanf/v2"
 )
 
-// Config 配置对象
+// Config documents related behavior.
 type Config struct {
 	k        *koanf.Koanf
 	validate *validator.Validate
@@ -26,7 +26,7 @@ func newConfig(k *koanf.Koanf, opts *Options) *Config {
 	}
 }
 
-// validateStruct 根据验证级别验证结构体
+// validateStruct documents related behavior.
 func (c *Config) validateStruct(out any) error {
 	switch c.level {
 	case ValidateLevelNone:
@@ -38,59 +38,59 @@ func (c *Config) validateStruct(out any) error {
 	}
 }
 
-// Get 获取任意类型的配置值
+// Get retrieves related data.
 func (c *Config) Get(path string) any {
 	return c.k.Get(path)
 }
 
-// GetString 获取字符串配置值
+// GetString retrieves related data.
 func (c *Config) GetString(path string) string {
 	return c.k.String(path)
 }
 
-// GetInt 获取整数配置值
+// GetInt retrieves related data.
 func (c *Config) GetInt(path string) int {
 	return c.k.Int(path)
 }
 
-// GetInt64 获取 64 位整数配置值
+// GetInt64 retrieves related data.
 func (c *Config) GetInt64(path string) int64 {
 	return c.k.Int64(path)
 }
 
-// GetFloat64 获取浮点数配置值
+// GetFloat64 retrieves related data.
 func (c *Config) GetFloat64(path string) float64 {
 	return c.k.Float64(path)
 }
 
-// GetBool 获取布尔配置值
+// GetBool retrieves related data.
 func (c *Config) GetBool(path string) bool {
 	return c.k.Bool(path)
 }
 
-// GetDuration 获取时长配置值 (支持 "1s", "1m", "1h" 等格式)
+// GetDuration retrieves related data.
 func (c *Config) GetDuration(path string) time.Duration {
 	return c.k.Duration(path)
 }
 
-// GetStringSlice 获取字符串切片配置值
+// GetStringSlice retrieves related data.
 func (c *Config) GetStringSlice(path string) []string {
 	return c.k.Strings(path)
 }
 
-// GetIntSlice 获取整数切片配置值
+// GetIntSlice retrieves related data.
 func (c *Config) GetIntSlice(path string) []int {
 	return c.k.Ints(path)
 }
 
-// Unmarshal 将配置解构到目标结构体
-// path: 配置路径，空字符串表示整个配置
+// Unmarshal documents related behavior.
+// path documents related behavior.
 func (c *Config) Unmarshal(path string, out any) error {
 	return c.k.Unmarshal(path, out)
 }
 
-// UnmarshalWithValidate 将配置解构到目标结构体并进行验证
-// path: 配置路径，空字符串表示整个配置
+// UnmarshalWithValidate documents related behavior.
+// path documents related behavior.
 func (c *Config) UnmarshalWithValidate(path string, out any) error {
 	if err := c.k.Unmarshal(path, out); err != nil {
 		return err
@@ -98,17 +98,17 @@ func (c *Config) UnmarshalWithValidate(path string, out any) error {
 	return c.validate.Struct(out)
 }
 
-// Exists 检查配置键是否存在
+// Exists checks related state.
 func (c *Config) Exists(path string) bool {
 	return c.k.Exists(path)
 }
 
-// All 获取所有配置 (map 形式)
+// All retrieves related data.
 func (c *Config) All() map[string]any {
 	return c.k.All()
 }
 
-// Validate 手动验证结构体
+// Validate documents related behavior.
 func (c *Config) Validate(out any) error {
 	return c.validate.Struct(out)
 }

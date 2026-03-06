@@ -162,11 +162,9 @@ func (t *Table[R, C, V]) Len() int {
 	if t == nil || len(t.data) == 0 {
 		return 0
 	}
-	total := 0
-	for _, row := range t.data {
-		total += len(row)
-	}
-	return total
+	return lo.SumBy(lo.Values(t.data), func(row map[C]V) int {
+		return len(row)
+	})
 }
 
 // IsEmpty reports whether table has no cells.

@@ -7,10 +7,10 @@ import (
 	"time"
 )
 
-// Option 日志配置选项函数
+// Option documents related behavior.
 type Option func(*config)
 
-// config 日志配置
+// config documents related behavior.
 type config struct {
 	level      Level
 	console    bool
@@ -26,7 +26,7 @@ type config struct {
 	compress   bool
 }
 
-// defaultConfig 默认配置
+// defaultConfig provides default behavior.
 func defaultConfig() config {
 	return config{
 		level:      InfoLevel,
@@ -41,36 +41,36 @@ func defaultConfig() config {
 	}
 }
 
-// validate 验证配置
+// validate documents related behavior.
 func (c *config) validate() error {
-	// 验证日志级别
+	// Note.
 	if c.level < TraceLevel || c.level > DisabledLevel {
 		return fmt.Errorf("invalid log level: %v", c.level)
 	}
 
-	// 验证文件配置
+	// Note.
 	if c.filePath != "" {
-		// 检查文件目录是否可写
+		// Note.
 		dir := filepath.Dir(c.filePath)
 		if _, err := os.Stat(dir); os.IsNotExist(err) {
-			// 目录不存在，尝试创建
+			// Note.
 			if err := os.MkdirAll(dir, 0o755); err != nil {
 				return fmt.Errorf("cannot create log directory %s: %w", dir, err)
 			}
 		}
 	}
 
-	// 验证文件大小限制
+	// Note.
 	if c.maxSize < 1 {
 		return fmt.Errorf("maxSize must be at least 1MB, got %d", c.maxSize)
 	}
 
-	// 验证保留天数
+	// Note.
 	if c.maxAge < 0 {
 		return fmt.Errorf("maxAge cannot be negative, got %d", c.maxAge)
 	}
 
-	// 验证备份数量
+	// Note.
 	if c.maxBackups < 0 {
 		return fmt.Errorf("maxBackups cannot be negative, got %d", c.maxBackups)
 	}
@@ -78,17 +78,17 @@ func (c *config) validate() error {
 	return nil
 }
 
-// 日志级别选项
+// Note.
 
-// WithLevel 设置日志级别
-// 使用强类型 Level
+// WithLevel configures related behavior.
+// Note.
 func WithLevel(level Level) Option {
 	return func(c *config) {
 		c.level = level
 	}
 }
 
-// WithLevelString 从字符串设置日志级别
+// WithLevelString configures related behavior.
 func WithLevelString(level string) Option {
 	return func(c *config) {
 		l, err := ParseLevel(level)
@@ -98,69 +98,69 @@ func WithLevelString(level string) Option {
 	}
 }
 
-// WithTraceLevel 启用 trace 级别日志（包含所有日志）
+// WithTraceLevel enables related functionality.
 func WithTraceLevel() Option {
 	return WithLevel(TraceLevel)
 }
 
-// WithDebugLevel 启用 debug 级别日志
+// WithDebugLevel enables related functionality.
 func WithDebugLevel() Option {
 	return WithLevel(DebugLevel)
 }
 
-// WithInfoLevel 启用 info 级别日志
+// WithInfoLevel enables related functionality.
 func WithInfoLevel() Option {
 	return WithLevel(InfoLevel)
 }
 
-// WithWarnLevel 启用 warn 级别日志
+// WithWarnLevel enables related functionality.
 func WithWarnLevel() Option {
 	return WithLevel(WarnLevel)
 }
 
-// WithErrorLevel 启用 error 级别日志
+// WithErrorLevel enables related functionality.
 func WithErrorLevel() Option {
 	return WithLevel(ErrorLevel)
 }
 
-// WithFatalLevel 启用 fatal 级别日志
+// WithFatalLevel enables related functionality.
 func WithFatalLevel() Option {
 	return WithLevel(FatalLevel)
 }
 
-// WithPanicLevel 启用 panic 级别日志
+// WithPanicLevel enables related functionality.
 func WithPanicLevel() Option {
 	return WithLevel(PanicLevel)
 }
 
-// 输出选项
+// Note.
 
-// WithConsole 启用/禁用控制台输出
+// WithConsole enables related functionality.
 func WithConsole(enabled bool) Option {
 	return func(c *config) {
 		c.console = enabled
 	}
 }
 
-// WithNoColor 禁用控制台颜色输出
+// WithNoColor disables related functionality.
 func WithNoColor() Option {
 	return func(c *config) {
 		c.noColor = true
 	}
 }
 
-// WithFile 设置日志文件路径
-// 路径目录会自动创建
+// WithFile configures related behavior.
+// Note.
 func WithFile(path string) Option {
 	return func(c *config) {
 		c.filePath = path
 	}
 }
 
-// WithFileRotation 配置文件轮转参数
-// maxSize: 单个文件最大大小 (MB)
-// maxAge: 文件保留天数
-// maxBackups: 最大备份文件数量
+// WithFileRotation documents related behavior.
+// maxSize documents related behavior.
+// maxAge documents related behavior.
+// maxBackups documents related behavior.
 func WithFileRotation(maxSizeMB, maxAgeDays, maxBackups int) Option {
 	return func(c *config) {
 		c.maxSize = maxSizeMB
@@ -169,62 +169,62 @@ func WithFileRotation(maxSizeMB, maxAgeDays, maxBackups int) Option {
 	}
 }
 
-// WithLocalTime 使用本地时间进行文件轮转
+// WithLocalTime documents related behavior.
 func WithLocalTime(enabled bool) Option {
 	return func(c *config) {
 		c.localTime = enabled
 	}
 }
 
-// WithCompress 启用/禁用压缩备份文件
+// WithCompress enables related functionality.
 func WithCompress(enabled bool) Option {
 	return func(c *config) {
 		c.compress = enabled
 	}
 }
 
-// 格式选项
+// Note.
 
-// WithTimeFormat 设置时间格式
-// 使用 Go 的时间格式：2006-01-02 15:04:05
+// WithTimeFormat configures related behavior.
+// Note.
 func WithTimeFormat(format string) Option {
 	return func(c *config) {
 		c.timeFormat = format
 	}
 }
 
-// WithRFC3339Time 使用 RFC3339 时间格式
+// WithRFC3339Time documents related behavior.
 func WithRFC3339Time() Option {
 	return WithTimeFormat(time.RFC3339)
 }
 
-// WithISO8601Time 使用 ISO8601 时间格式
+// WithISO8601Time documents related behavior.
 func WithISO8601Time() Option {
 	return WithTimeFormat("2006-01-02T15:04:05Z07:00")
 }
 
-// 全局选项
+// Note.
 
-// WithGlobalLogger 设置为全局默认 logger
+// WithGlobalLogger configures related behavior.
 func WithGlobalLogger() Option {
 	return func(c *config) {
 		c.setGlobal = true
 	}
 }
 
-// WithCaller 启用/禁用调用者信息
+// WithCaller enables related functionality.
 func WithCaller(enabled bool) Option {
 	return func(c *config) {
 		c.addCaller = enabled
 	}
 }
 
-// 预设配置
+// Note.
 
-// DevelopmentConfig 开发环境配置
-// - 启用控制台输出
-// - Debug 级别
-// - 启用调用者信息
+// DevelopmentConfig documents related behavior.
+// Note.
+// Note.
+// Note.
 func DevelopmentConfig() []Option {
 	return []Option{
 		WithConsole(true),
@@ -233,10 +233,10 @@ func DevelopmentConfig() []Option {
 	}
 }
 
-// ProductionConfig 生产环境配置
-// - 禁用控制台输出
-// - Info 级别
-// - 启用文件轮转
+// ProductionConfig documents related behavior.
+// Note.
+// Note.
+// Note.
 func ProductionConfig(logPath string) []Option {
 	return []Option{
 		WithConsole(false),

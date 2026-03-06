@@ -40,9 +40,7 @@ func (m *Map[K, V]) SetAll(source map[K]V) {
 		return
 	}
 	m.ensureInit()
-	for k, v := range source {
-		m.items[k] = v
-	}
+	m.items = lo.Assign(m.items, source)
 }
 
 // Get returns the value for key.

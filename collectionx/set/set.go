@@ -94,10 +94,7 @@ func (s *Set[T]) Clone() *Set[T] {
 	if s == nil || len(s.items) == 0 {
 		return out
 	}
-	out.items = make(map[T]struct{}, len(s.items))
-	for item := range s.items {
-		out.items[item] = struct{}{}
-	}
+	out.items = lo.Assign(map[T]struct{}{}, s.items)
 	return out
 }
 

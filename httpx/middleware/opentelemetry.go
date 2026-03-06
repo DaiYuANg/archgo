@@ -1,4 +1,4 @@
-// OpenTelemetry 追踪中间件
+// OpenTelemetry documents related behavior.
 package middleware
 
 import (
@@ -14,15 +14,15 @@ import (
 
 var tracer = otel.Tracer("github.com/DaiYuANg/arcgo/httpx")
 
-// OpenTelemetryMiddleware OpenTelemetry 追踪中间件
+// OpenTelemetryMiddleware documents related behavior.
 func OpenTelemetryMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 
-		// 从请求中提取 trace context
+		// Note.
 		ctx := otel.GetTextMapPropagator().Extract(r.Context(), propagation.HeaderCarrier(r.Header))
 
-		// 创建 span
+		// Note.
 		opts := []trace.SpanStartOption{
 			trace.WithSpanKind(trace.SpanKindServer),
 			trace.WithAttributes(
@@ -36,31 +36,31 @@ func OpenTelemetryMiddleware(next http.Handler) http.Handler {
 		ctx, span := tracer.Start(ctx, "HTTP "+r.Method+" "+r.URL.Path, opts...)
 		defer span.End()
 
-		// 包装 ResponseWriter 以捕获状态码
+		// Note.
 		wrapped := &responseWriter{ResponseWriter: w, statusCode: http.StatusOK}
 
-		// 将 trace context 注入到请求中
+		// Note.
 		r = r.WithContext(ctx)
 
-		// 处理请求
+		// Note.
 		next.ServeHTTP(wrapped, r)
 
-		// 记录响应状态码
+		// Note.
 		span.SetAttributes(attribute.Int("http.response.status_code", wrapped.statusCode))
 
-		// 记录延迟
+		// Note.
 		span.SetAttributes(
 			attribute.Int64("http.response_time_ms", time.Since(start).Milliseconds()),
 		)
 	})
 }
 
-// InjectTraceContext 将 trace context 注入到 HTTP 请求头
+// InjectTraceContext documents related behavior.
 func InjectTraceContext(ctx context.Context, header http.Header) {
 	otel.GetTextMapPropagator().Inject(ctx, propagation.HeaderCarrier(header))
 }
 
-// ExtractTraceContext 从 HTTP 请求头提取 trace context
+// ExtractTraceContext documents related behavior.
 func ExtractTraceContext(ctx context.Context, header http.Header) context.Context {
 	return otel.GetTextMapPropagator().Extract(ctx, propagation.HeaderCarrier(header))
 }

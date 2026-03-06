@@ -12,6 +12,7 @@ import (
 	"github.com/DaiYuANg/arcgo/httpx/adapter/echo"
 	"github.com/DaiYuANg/arcgo/logx"
 	"github.com/danielgtaylor/huma/v2"
+	"github.com/go-playground/validator/v10"
 	echoMiddleware "github.com/labstack/echo/v4/middleware"
 )
 
@@ -114,9 +115,9 @@ func (s *UserStore) Delete(id int) bool {
 }
 
 type ListUsersInput struct {
-	Limit int    `query:"limit"`
-	Page  int    `query:"page"`
-	Q     string `query:"q"`
+	Limit int    `query:"limit" validate:"omitempty,min=1,max=100"`
+	Page  int    `query:"page" validate:"omitempty,min=1"`
+	Q     string `query:"q" validate:"omitempty,max=100"`
 }
 
 type ListUsersOutput struct {
@@ -129,7 +130,7 @@ type ListUsersOutput struct {
 }
 
 type GetUserInput struct {
-	ID int `path:"id"`
+	ID int `path:"id" validate:"required,min=1"`
 }
 
 type GetUserOutput struct {
@@ -137,9 +138,9 @@ type GetUserOutput struct {
 }
 
 type CreateUserBody struct {
-	Name  string `json:"name"`
-	Email string `json:"email"`
-	Age   int    `json:"age"`
+	Name  string `json:"name" validate:"required,min=2,max=64"`
+	Email string `json:"email" validate:"required,email"`
+	Age   int    `json:"age" validate:"gte=0,lte=130"`
 }
 
 type CreateUserInput struct {
@@ -151,9 +152,9 @@ type CreateUserOutput struct {
 }
 
 type UpdateUserBody struct {
-	Name  *string `json:"name,omitempty"`
-	Email *string `json:"email,omitempty"`
-	Age   *int    `json:"age,omitempty"`
+	Name  *string `json:"name,omitempty" validate:"omitempty,min=2,max=64"`
+	Email *string `json:"email,omitempty" validate:"omitempty,email"`
+	Age   *int    `json:"age,omitempty" validate:"omitempty,gte=0,lte=130"`
 }
 
 type UpdateUserInput struct {
@@ -191,20 +192,14 @@ func main() {
 
 	store := NewUserStore()
 	echoAdapter := echo.New()
-	echoAdapter.Engine().Use(echoMiddleware.Recover(), echoMiddleware.RequestLogger())
+	echoAdapter.Router().Use(echoMiddleware.Recover(), echoMiddleware.RequestLogger())
 
 	server := httpx.NewServer(
 		httpx.WithAdapter(echoAdapter),
 		httpx.WithLogger(logx.NewSlog(logger)),
 		httpx.WithPrintRoutes(true),
-		httpx.WithHuma(httpx.HumaOptions{
-			Enabled:     true,
-			Title:       "ArcGo Echo API",
-			Version:     "1.0.0",
-			Description: "Typed Echo API example",
-			DocsPath:    "/docs",
-			OpenAPIPath: "/openapi.json",
-		}),
+		httpx.WithValidator(validator.New(validator.WithRequiredStructEnabled())),
+		httpx.WithOpenAPIInfo("ArcGo Echo API", "1.0.0", "Typed Echo API example"),
 	)
 
 	if err = httpx.Get(server, "/health", func(ctx context.Context, input *struct{}) (*HealthOutput, error) {
@@ -256,12 +251,6 @@ func main() {
 	}
 
 	if err = httpx.GroupPost(api, "/users", func(ctx context.Context, input *CreateUserInput) (*CreateUserOutput, error) {
-		if strings.TrimSpace(input.Body.Name) == "" {
-			return nil, httpx.NewError(400, "name is required")
-		}
-		if strings.TrimSpace(input.Body.Email) == "" {
-			return nil, httpx.NewError(400, "email is required")
-		}
 		u := store.Create(input.Body)
 		out := &CreateUserOutput{}
 		out.Body = u

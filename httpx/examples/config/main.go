@@ -29,7 +29,8 @@ func main() {
 	serverOpts.Logger = slogLogger
 	serverOpts.BasePath = "/api"
 	serverOpts.PrintRoutes = true
-	serverOpts.HumaEnabled = true
+	serverOpts.EnableValidation = true
+	serverOpts.OpenAPIDocsEnabled = true
 	serverOpts.HumaTitle = "ArcGo API"
 	serverOpts.HumaVersion = "1.0.0"
 	serverOpts.HumaDescription = "API Documentation"

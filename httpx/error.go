@@ -6,7 +6,7 @@ import (
 	"github.com/samber/mo"
 )
 
-// 常见错误
+// Note.
 var (
 	ErrAdapterNotFound    = errors.New("httpx: adapter not found")
 	ErrInvalidEndpoint    = errors.New("httpx: invalid endpoint struct")
@@ -15,7 +15,7 @@ var (
 	ErrRouteNotRegistered = errors.New("httpx: route not registered")
 )
 
-// Error httpx 错误类型
+// Error documents related behavior.
 type Error struct {
 	Code    int
 	Message string
@@ -33,7 +33,7 @@ func (e *Error) Unwrap() error {
 	return e.Err
 }
 
-// NewError 创建 httpx 错误
+// NewError creates related functionality.
 func NewError(code int, message string, err ...error) *Error {
 	e := &Error{
 		Code:    code,
@@ -45,7 +45,7 @@ func NewError(code int, message string, err ...error) *Error {
 	return e
 }
 
-// ToOption 将 Error 转换为 Option
+// ToOption converts related values.
 func (e *Error) ToOption() mo.Option[error] {
 	if e == nil {
 		return mo.None[error]()
@@ -53,17 +53,17 @@ func (e *Error) ToOption() mo.Option[error] {
 	return mo.Some[error](e)
 }
 
-// IsAdapterNotFound 检查错误是否为 ErrAdapterNotFound
+// IsAdapterNotFound checks related state.
 func IsAdapterNotFound(err error) bool {
 	return errors.Is(err, ErrAdapterNotFound)
 }
 
-// IsInvalidEndpoint 检查错误是否为 ErrInvalidEndpoint
+// IsInvalidEndpoint checks related state.
 func IsInvalidEndpoint(err error) bool {
 	return errors.Is(err, ErrInvalidEndpoint)
 }
 
-// IsInvalidHandlerSignature 检查错误是否为 ErrInvalidHandlerSig
+// IsInvalidHandlerSignature checks related state.
 func IsInvalidHandlerSignature(err error) bool {
 	return errors.Is(err, ErrInvalidHandlerSig)
 }

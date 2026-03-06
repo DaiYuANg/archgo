@@ -1,0 +1,68 @@
+package tree
+
+import (
+	"encoding/json"
+
+	common "github.com/DaiYuANg/arcgo/collectionx/internal"
+	"github.com/samber/lo"
+)
+
+type jsonNode[K comparable, V any] struct {
+	ID       K                `json:"id"`
+	Value    V                `json:"value"`
+	Children []jsonNode[K, V] `json:"children,omitempty"`
+}
+
+// ToJSON serializes tree roots and descendants to JSON.
+func (t *Tree[K, V]) ToJSON() ([]byte, error) {
+	return json.Marshal(t.toJSONNodes())
+}
+
+// MarshalJSON implements json.Marshaler.
+func (t *Tree[K, V]) MarshalJSON() ([]byte, error) {
+	return t.ToJSON()
+}
+
+// String implements fmt.Stringer.
+func (t *Tree[K, V]) String() string {
+	data, err := t.ToJSON()
+	return common.JSONResultString(data, err, "[]")
+}
+
+// ToJSON serializes concurrent tree snapshot to JSON.
+func (t *ConcurrentTree[K, V]) ToJSON() ([]byte, error) {
+	return t.Snapshot().ToJSON()
+}
+
+// MarshalJSON implements json.Marshaler.
+func (t *ConcurrentTree[K, V]) MarshalJSON() ([]byte, error) {
+	return t.ToJSON()
+}
+
+// String implements fmt.Stringer.
+func (t *ConcurrentTree[K, V]) String() string {
+	data, err := t.ToJSON()
+	return common.JSONResultString(data, err, "[]")
+}
+
+func (t *Tree[K, V]) toJSONNodes() []jsonNode[K, V] {
+	if t == nil || t.IsEmpty() {
+		return nil
+	}
+	return lo.Map(t.Roots(), func(root *Node[K, V], _ int) jsonNode[K, V] {
+		return toJSONNode(root)
+	})
+}
+
+func toJSONNode[K comparable, V any](node *Node[K, V]) jsonNode[K, V] {
+	if node == nil {
+		return jsonNode[K, V]{}
+	}
+	return jsonNode[K, V]{
+		ID:    node.ID(),
+		Value: node.Value(),
+		Children: lo.Map(node.Children(), func(child *Node[K, V], _ int) jsonNode[K, V] {
+			return toJSONNode(child)
+		}),
+	}
+}

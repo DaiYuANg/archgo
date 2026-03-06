@@ -3,15 +3,16 @@ package configx
 import (
 	"github.com/knadh/koanf/providers/confmap"
 	"github.com/knadh/koanf/v2"
+	"github.com/samber/lo"
 	"github.com/samber/mo"
 )
 
-// Loader 配置加载器（非泛型）
+// Loader loads related configuration.
 type Loader struct {
 	opts *Options
 }
 
-// Load 加载配置到目标结构体
+// Load loads related configuration.
 func (l *Loader) Load(out any) error {
 	cfg, err := l.loadInternal()
 	if err != nil {
@@ -23,7 +24,7 @@ func (l *Loader) Load(out any) error {
 	return cfg.validateStruct(out)
 }
 
-// LoadConfig 加载并返回 Config 对象
+// LoadConfig returns related data.
 func (l *Loader) LoadConfig() (*Config, error) {
 	return l.loadInternal()
 }
@@ -32,21 +33,23 @@ func (l *Loader) loadInternal() (*Config, error) {
 	return loadConfigFromOptions(l.opts)
 }
 
-// New 创建非泛型加载器
+// New creates related functionality.
 func New(opts ...Option) *Loader {
 	options := NewOptions()
-	for _, opt := range opts {
-		opt(options)
-	}
+	lo.ForEach(opts, func(opt Option, _ int) {
+		if opt != nil {
+			opt(options)
+		}
+	})
 	return &Loader{opts: options}
 }
 
-// LoaderT 泛型配置加载器
+// LoaderT loads related configuration.
 type LoaderT[T any] struct {
 	opts *Options
 }
 
-// Load 加载配置到泛型结构体 T
+// Load loads related configuration.
 func (l *LoaderT[T]) Load() mo.Result[T] {
 	cfg, err := l.loadInternal()
 	if err != nil {
@@ -63,7 +66,7 @@ func (l *LoaderT[T]) Load() mo.Result[T] {
 	return mo.Ok(out)
 }
 
-// LoadConfig 加载并返回 Config 对象
+// LoadConfig returns related data.
 func (l *LoaderT[T]) LoadConfig() (*Config, error) {
 	return l.loadInternal()
 }
@@ -75,7 +78,7 @@ func (l *LoaderT[T]) loadInternal() (*Config, error) {
 func loadConfigFromOptions(opts *Options) (*Config, error) {
 	k := koanf.New(".")
 
-	// 加载默认值（map 形式）
+	// Note.
 	if opts.defaults.IsPresent() {
 		defaults, _ := opts.defaults.Get()
 		if err := k.Load(confmap.Provider(defaults, "."), nil); err != nil {
@@ -83,14 +86,14 @@ func loadConfigFromOptions(opts *Options) (*Config, error) {
 		}
 	}
 
-	// 加载默认值（struct 形式）
+	// Note.
 	if opts.defaultsStruct != nil {
 		if err := loadDefaultsStruct(k, opts.defaultsStruct); err != nil {
 			return nil, err
 		}
 	}
 
-	// 按优先级加载
+	// Note.
 	for _, src := range opts.priority {
 		switch src {
 		case SourceDotenv:
@@ -111,34 +114,36 @@ func loadConfigFromOptions(opts *Options) (*Config, error) {
 	return newConfig(k, opts), nil
 }
 
-// NewT 创建泛型配置加载器
+// NewT creates related functionality.
 func NewT[T any](opts ...Option) *LoaderT[T] {
 	options := NewOptions()
-	for _, opt := range opts {
-		opt(options)
-	}
+	lo.ForEach(opts, func(opt Option, _ int) {
+		if opt != nil {
+			opt(options)
+		}
+	})
 	return &LoaderT[T]{opts: options}
 }
 
-// Load 便捷函数：直接加载配置到结构体（非泛型）
+// Load loads related configuration.
 func Load(out any, opts ...Option) error {
 	loader := New(opts...)
 	return loader.Load(out)
 }
 
-// LoadT 便捷函数：直接加载配置到泛型结构体
+// LoadT loads related configuration.
 func LoadT[T any](opts ...Option) mo.Result[T] {
 	loader := NewT[T](opts...)
 	return loader.Load()
 }
 
-// LoadConfig 便捷函数：直接加载配置并返回 Config 对象
+// LoadConfig returns related data.
 func LoadConfig(opts ...Option) (*Config, error) {
 	loader := New(opts...)
 	return loader.LoadConfig()
 }
 
-// LoadConfigT 便捷函数：直接加载配置并返回 Config 对象（泛型版本）
+// LoadConfigT returns related data.
 func LoadConfigT[T any](opts ...Option) (*Config, error) {
 	loader := NewT[T](opts...)
 	return loader.LoadConfig()

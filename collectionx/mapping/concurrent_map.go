@@ -40,9 +40,7 @@ func (m *ConcurrentMap[K, V]) SetAll(source map[K]V) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.ensureInitLocked(len(source))
-	for key, value := range source {
-		m.items[key] = value
-	}
+	m.items = lo.Assign(m.items, source)
 }
 
 // Get returns the value for key.

@@ -9,6 +9,7 @@ import (
 	"github.com/DaiYuANg/arcgo/logx"
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/go-chi/chi/v5/middleware"
+	"github.com/go-playground/validator/v10"
 )
 
 type ListUsersOutput struct {
@@ -18,7 +19,7 @@ type ListUsersOutput struct {
 }
 
 type GetUserInput struct {
-	ID string `query:"id"`
+	ID string `query:"id" validate:"omitempty,min=1,max=32"`
 }
 
 type GetUserOutput struct {
@@ -43,12 +44,8 @@ func main() {
 		httpx.WithAdapter(stdAdapter),
 		httpx.WithLogger(slogLogger),
 		httpx.WithPrintRoutes(true),
-		httpx.WithHuma(httpx.HumaOptions{
-			Enabled:     true,
-			Title:       "ArcGo API",
-			Version:     "1.0.0",
-			Description: "Typed API built with httpx",
-		}),
+		httpx.WithValidator(validator.New(validator.WithRequiredStructEnabled())),
+		httpx.WithOpenAPIInfo("ArcGo API", "1.0.0", "Typed API built with httpx"),
 	)
 
 	if err = httpx.Get(server, "/users", func(ctx context.Context, input *struct{}) (*ListUsersOutput, error) {

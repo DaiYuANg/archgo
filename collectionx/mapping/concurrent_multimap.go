@@ -157,11 +157,9 @@ func (m *ConcurrentMultiMap[K, V]) ValueCount() int {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
-	total := 0
-	for _, values := range m.items {
-		total += len(values)
-	}
-	return total
+	return lo.SumBy(lo.Values(m.items), func(values []V) int {
+		return len(values)
+	})
 }
 
 // IsEmpty reports whether map has no keys.

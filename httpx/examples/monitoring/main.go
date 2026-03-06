@@ -27,7 +27,7 @@ func main() {
 	server := httpx.NewServer(
 		httpx.WithLogger(logx.NewSlog(logger)),
 		httpx.WithPrintRoutes(true),
-		httpx.WithHuma(httpx.HumaOptions{Enabled: true, Title: "ArcGo Monitoring API", Version: "1.0.0"}),
+		httpx.WithOpenAPIInfo("ArcGo Monitoring API", "1.0.0", "Monitoring API"),
 	)
 
 	err = httpx.Get(server, "/health", func(ctx context.Context, input *struct{}) (*HealthOutput, error) {

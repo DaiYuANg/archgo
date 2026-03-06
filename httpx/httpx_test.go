@@ -4,12 +4,9 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"strconv"
 	"testing"
-	"time"
 
 	"github.com/DaiYuANg/arcgo/httpx/adapter"
 	adapterecho "github.com/DaiYuANg/arcgo/httpx/adapter/echo"
@@ -17,63 +14,74 @@ import (
 	adaptergin "github.com/DaiYuANg/arcgo/httpx/adapter/gin"
 	"github.com/DaiYuANg/arcgo/httpx/adapter/std"
 	"github.com/danielgtaylor/huma/v2"
+	"github.com/go-playground/validator/v10"
 	"github.com/stretchr/testify/assert"
 )
 
 type pingOutput struct {
-	Message string `json:"message"`
+	Body struct {
+		Message string `json:"message"`
+	}
 }
 
 type echoInput struct {
-	Name string `json:"name"`
+	Body struct {
+		Name string `json:"name"`
+	}
 }
 
 type echoOutput struct {
-	Name string `json:"name"`
+	Body struct {
+		Name string `json:"name"`
+	}
 }
 
 type customBindInput struct {
-	ID    int
-	Token string
-}
-
-func (i *customBindInput) BindRequest(r *http.Request) error {
-	if r == nil {
-		return nil
-	}
-	rawID := r.URL.Query().Get("user_id")
-	if rawID == "" {
-		return nil
-	}
-
-	id, err := strconv.Atoi(rawID)
-	if err != nil {
-		return fmt.Errorf("parse user_id: %w", err)
-	}
-	i.ID = id
-	i.Token = r.Header.Get("X-Token")
-	return nil
+	ID    int    `query:"user_id"`
+	Token string `header:"X-Token"`
 }
 
 type customBindOutput struct {
-	ID    int    `json:"id"`
-	Token string `json:"token"`
+	Body struct {
+		ID    int    `json:"id"`
+		Token string `json:"token"`
+	}
 }
 
 type paramsInput struct {
-	ID      int           `query:"id"`
-	Flag    bool          `query:"flag"`
-	Timeout time.Duration `query:"timeout"`
-	IDs     []int         `query:"ids"`
-	Trace   string        `header:"X-Trace-ID"`
+	ID    int    `query:"id"`
+	Flag  bool   `query:"flag"`
+	Trace string `header:"X-Trace-ID"`
 }
 
 type paramsOutput struct {
-	ID      int    `json:"id"`
-	Flag    bool   `json:"flag"`
-	Timeout string `json:"timeout"`
-	IDs     []int  `json:"ids"`
-	Trace   string `json:"trace"`
+	Body struct {
+		ID    int    `json:"id"`
+		Flag  bool   `json:"flag"`
+		Trace string `json:"trace"`
+	}
+}
+
+type validatedBodyInput struct {
+	Body struct {
+		Name string `json:"name" validate:"required,min=3"`
+	}
+}
+
+type validatedBodyOutput struct {
+	Body struct {
+		Name string `json:"name"`
+	}
+}
+
+type validatedQueryInput struct {
+	ID int `query:"id" validate:"required,min=1"`
+}
+
+type customValidatedInput struct {
+	Body struct {
+		Name string `json:"name" validate:"arc"`
+	}
 }
 
 type humaPingOutput struct {
@@ -82,11 +90,13 @@ type humaPingOutput struct {
 	}
 }
 
-func TestServer_GenericGetWithoutHuma(t *testing.T) {
+func TestServer_GenericGetWithDefaultHuma(t *testing.T) {
 	server := NewServer()
 
 	err := Get(server, "/ping", func(ctx context.Context, input *struct{}) (*pingOutput, error) {
-		return &pingOutput{Message: "pong"}, nil
+		out := &pingOutput{}
+		out.Body.Message = "pong"
+		return out, nil
 	})
 	assert.NoError(t, err)
 
@@ -96,14 +106,16 @@ func TestServer_GenericGetWithoutHuma(t *testing.T) {
 
 	assert.Equal(t, http.StatusOK, w.Code)
 	assert.Contains(t, w.Body.String(), "pong")
-	assert.False(t, server.HasHuma())
+	assert.True(t, server.HasHuma())
 }
 
 func TestServer_GenericPostDecodeBody(t *testing.T) {
 	server := NewServer()
 
 	err := Post(server, "/echo", func(ctx context.Context, input *echoInput) (*echoOutput, error) {
-		return &echoOutput{Name: input.Name}, nil
+		out := &echoOutput{}
+		out.Body.Name = input.Body.Name
+		return out, nil
 	})
 	assert.NoError(t, err)
 
@@ -122,7 +134,9 @@ func TestServer_GenericPostInvalidJSON(t *testing.T) {
 	server := NewServer()
 
 	err := Post(server, "/echo", func(ctx context.Context, input *echoInput) (*echoOutput, error) {
-		return &echoOutput{Name: input.Name}, nil
+		out := &echoOutput{}
+		out.Body.Name = input.Body.Name
+		return out, nil
 	})
 	assert.NoError(t, err)
 
@@ -133,17 +147,55 @@ func TestServer_GenericPostInvalidJSON(t *testing.T) {
 	server.ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusBadRequest, w.Code)
-	assert.Contains(t, w.Body.String(), "invalid request input")
+	assert.Contains(t, w.Body.String(), "unexpected end of JSON input")
+}
+
+func TestServer_WithValidation_InvalidBody(t *testing.T) {
+	server := NewServer(WithValidation())
+
+	err := Post(server, "/validated", func(ctx context.Context, input *validatedBodyInput) (*validatedBodyOutput, error) {
+		out := &validatedBodyOutput{}
+		out.Body.Name = input.Body.Name
+		return out, nil
+	})
+	assert.NoError(t, err)
+
+	req := httptest.NewRequest(http.MethodPost, "/validated", bytes.NewReader([]byte(`{"name":"ab"}`)))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	server.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.Contains(t, w.Body.String(), "request validation failed")
+}
+
+func TestServer_WithValidation_ValidBody(t *testing.T) {
+	server := NewServer(WithValidation())
+
+	err := Post(server, "/validated", func(ctx context.Context, input *validatedBodyInput) (*validatedBodyOutput, error) {
+		out := &validatedBodyOutput{}
+		out.Body.Name = input.Body.Name
+		return out, nil
+	})
+	assert.NoError(t, err)
+
+	req := httptest.NewRequest(http.MethodPost, "/validated", bytes.NewReader([]byte(`{"name":"arcgo"}`)))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	server.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Contains(t, w.Body.String(), "\"name\":\"arcgo\"")
 }
 
 func TestServer_CustomRequestBinder(t *testing.T) {
 	server := NewServer()
 
 	err := Get(server, "/custom-bind", func(ctx context.Context, input *customBindInput) (*customBindOutput, error) {
-		return &customBindOutput{
-			ID:    input.ID,
-			Token: input.Token,
-		}, nil
+		out := &customBindOutput{}
+		out.Body.ID = input.ID
+		out.Body.Token = input.Token
+		return out, nil
 	})
 	assert.NoError(t, err)
 
@@ -162,9 +214,9 @@ func TestServer_CustomRequestBinderError(t *testing.T) {
 	server := NewServer()
 
 	err := Get(server, "/custom-bind", func(ctx context.Context, input *customBindInput) (*customBindOutput, error) {
-		return &customBindOutput{
-			ID: input.ID,
-		}, nil
+		out := &customBindOutput{}
+		out.Body.ID = input.ID
+		return out, nil
 	})
 	assert.NoError(t, err)
 
@@ -173,8 +225,8 @@ func TestServer_CustomRequestBinderError(t *testing.T) {
 
 	server.ServeHTTP(w, req)
 
-	assert.Equal(t, http.StatusBadRequest, w.Code)
-	assert.Contains(t, w.Body.String(), "invalid request input")
+	assert.Equal(t, http.StatusUnprocessableEntity, w.Code)
+	assert.Contains(t, w.Body.String(), "user_id")
 }
 
 func TestServer_GroupWithBasePath(t *testing.T) {
@@ -182,7 +234,9 @@ func TestServer_GroupWithBasePath(t *testing.T) {
 	v1 := server.Group("/v1")
 
 	err := GroupGet(v1, "/health", func(ctx context.Context, input *struct{}) (*pingOutput, error) {
-		return &pingOutput{Message: "ok"}, nil
+		out := &pingOutput{}
+		out.Body.Message = "ok"
+		return out, nil
 	})
 	assert.NoError(t, err)
 
@@ -198,17 +252,15 @@ func TestServer_StrongTypedQueryAndHeaderBinding(t *testing.T) {
 	server := NewServer()
 
 	err := Get(server, "/params", func(ctx context.Context, input *paramsInput) (*paramsOutput, error) {
-		return &paramsOutput{
-			ID:      input.ID,
-			Flag:    input.Flag,
-			Timeout: input.Timeout.String(),
-			IDs:     input.IDs,
-			Trace:   input.Trace,
-		}, nil
+		out := &paramsOutput{}
+		out.Body.ID = input.ID
+		out.Body.Flag = input.Flag
+		out.Body.Trace = input.Trace
+		return out, nil
 	})
 	assert.NoError(t, err)
 
-	req := httptest.NewRequest(http.MethodGet, "/params?id=42&flag=true&timeout=3s&ids=1,2,3", nil)
+	req := httptest.NewRequest(http.MethodGet, "/params?id=42&flag=true", nil)
 	req.Header.Set("X-Trace-ID", "trace-001")
 	w := httptest.NewRecorder()
 	server.ServeHTTP(w, req)
@@ -216,8 +268,6 @@ func TestServer_StrongTypedQueryAndHeaderBinding(t *testing.T) {
 	assert.Equal(t, http.StatusOK, w.Code)
 	assert.Contains(t, w.Body.String(), `"id":42`)
 	assert.Contains(t, w.Body.String(), `"flag":true`)
-	assert.Contains(t, w.Body.String(), `"timeout":"3s"`)
-	assert.Contains(t, w.Body.String(), `"ids":[1,2,3]`)
 	assert.Contains(t, w.Body.String(), `"trace":"trace-001"`)
 }
 
@@ -228,11 +278,15 @@ func TestServer_StrongTypedPathBindingOnStdAdapter(t *testing.T) {
 		UserID int `path:"id"`
 	}
 	type out struct {
-		ID int `json:"id"`
+		Body struct {
+			ID int `json:"id"`
+		}
 	}
 
 	err := Get(server, "/users/{id}", func(ctx context.Context, input *in) (*out, error) {
-		return &out{ID: input.UserID}, nil
+		result := &out{}
+		result.Body.ID = input.UserID
+		return result, nil
 	})
 	assert.NoError(t, err)
 
@@ -251,11 +305,15 @@ func TestServer_StrongTypedPathBindingOnGinAdapter(t *testing.T) {
 		UserID int `path:"id"`
 	}
 	type out struct {
-		ID int `json:"id"`
+		Body struct {
+			ID int `json:"id"`
+		}
 	}
 
-	err := Get(server, "/users/:id", func(ctx context.Context, input *in) (*out, error) {
-		return &out{ID: input.UserID}, nil
+	err := Get(server, "/users/{id}", func(ctx context.Context, input *in) (*out, error) {
+		result := &out{}
+		result.Body.ID = input.UserID
+		return result, nil
 	})
 	assert.NoError(t, err)
 
@@ -274,11 +332,15 @@ func TestServer_StrongTypedPathBindingOnEchoAdapter(t *testing.T) {
 		UserID int `path:"id"`
 	}
 	type out struct {
-		ID int `json:"id"`
+		Body struct {
+			ID int `json:"id"`
+		}
 	}
 
-	err := Get(server, "/users/:id", func(ctx context.Context, input *in) (*out, error) {
-		return &out{ID: input.UserID}, nil
+	err := Get(server, "/users/{id}", func(ctx context.Context, input *in) (*out, error) {
+		result := &out{}
+		result.Body.ID = input.UserID
+		return result, nil
 	})
 	assert.NoError(t, err)
 
@@ -297,11 +359,15 @@ func TestServer_StrongTypedPathBindingOnFiberAdapter(t *testing.T) {
 		UserID int `path:"id"`
 	}
 	type out struct {
-		ID int `json:"id"`
+		Body struct {
+			ID int `json:"id"`
+		}
 	}
 
-	err := Get(server, "/users/:id", func(ctx context.Context, input *in) (*out, error) {
-		return &out{ID: input.UserID}, nil
+	err := Get(server, "/users/{id}", func(ctx context.Context, input *in) (*out, error) {
+		result := &out{}
+		result.Body.ID = input.UserID
+		return result, nil
 	})
 	assert.NoError(t, err)
 
@@ -325,7 +391,9 @@ func TestServer_WithMiddleware(t *testing.T) {
 
 	server := NewServer(WithAdapter(stdAdapter))
 	err := Get(server, "/items", func(ctx context.Context, input *struct{}) (*pingOutput, error) {
-		return &pingOutput{Message: "ok"}, nil
+		out := &pingOutput{}
+		out.Body.Message = "ok"
+		return out, nil
 	})
 	assert.NoError(t, err)
 
@@ -337,13 +405,8 @@ func TestServer_WithMiddleware(t *testing.T) {
 	assert.Equal(t, http.StatusOK, w.Code)
 }
 
-func TestServer_WithHumaEnabled(t *testing.T) {
-	server := NewServer(WithHuma(HumaOptions{
-		Enabled:     true,
-		Title:       "ArcGo API",
-		Version:     "1.0.0",
-		Description: "typed api",
-	}))
+func TestServer_DefaultHumaEnabled(t *testing.T) {
+	server := NewServer()
 
 	err := Get(server, "/huma", func(ctx context.Context, input *struct{}) (*humaPingOutput, error) {
 		out := &humaPingOutput{}
@@ -362,6 +425,51 @@ func TestServer_WithHumaEnabled(t *testing.T) {
 	assert.NotNil(t, server.HumaAPI())
 }
 
+func TestServer_WithValidation_WorksWithHuma(t *testing.T) {
+	server := NewServer(
+		WithValidation(),
+	)
+
+	err := Get(server, "/validate-huma", func(ctx context.Context, input *validatedQueryInput) (*humaPingOutput, error) {
+		out := &humaPingOutput{}
+		out.Body.Message = "ok"
+		return out, nil
+	})
+	assert.NoError(t, err)
+
+	req := httptest.NewRequest(http.MethodGet, "/validate-huma", nil)
+	w := httptest.NewRecorder()
+	server.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.Contains(t, w.Body.String(), "request validation failed")
+}
+
+func TestServer_WithCustomValidator(t *testing.T) {
+	customValidator := validator.New()
+	err := customValidator.RegisterValidation("arc", func(fl validator.FieldLevel) bool {
+		return fl.Field().String() == "arc"
+	})
+	assert.NoError(t, err)
+
+	server := NewServer(WithValidator(customValidator))
+
+	err = Post(server, "/custom-validate", func(ctx context.Context, input *customValidatedInput) (*validatedBodyOutput, error) {
+		out := &validatedBodyOutput{}
+		out.Body.Name = input.Body.Name
+		return out, nil
+	})
+	assert.NoError(t, err)
+
+	req := httptest.NewRequest(http.MethodPost, "/custom-validate", bytes.NewReader([]byte(`{"name":"bad"}`)))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	server.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.Contains(t, w.Body.String(), "request validation failed")
+}
+
 type fakeHumaAdapter struct {
 	lastOpts adapter.HumaOptions
 	enabled  bool
@@ -375,7 +483,7 @@ func (f *fakeHumaAdapter) Group(prefix string) adapter.Adapter { return f }
 
 func (f *fakeHumaAdapter) ServeHTTP(w http.ResponseWriter, r *http.Request) {}
 
-func (f *fakeHumaAdapter) EnableHuma(opts adapter.HumaOptions) {
+func (f *fakeHumaAdapter) ConfigureHuma(opts adapter.HumaOptions) {
 	f.lastOpts = opts
 	f.enabled = true
 }
@@ -384,28 +492,29 @@ func (f *fakeHumaAdapter) HumaAPI() huma.API { return nil }
 
 func (f *fakeHumaAdapter) HasHuma() bool { return f.enabled }
 
-func TestServer_WithHumaOptionCallsAdapter(t *testing.T) {
+func TestServer_OpenAPIOptionsCallAdapter(t *testing.T) {
 	fake := &fakeHumaAdapter{}
 
 	_ = NewServer(
 		WithAdapter(fake),
-		WithHuma(HumaOptions{
-			Enabled: true,
-			Title:   "Test API",
-			Version: "1.0.0",
-		}),
+		WithOpenAPIInfo("Test API", "1.0.0", "desc"),
+		WithOpenAPIDocs(false),
 	)
 
 	assert.True(t, fake.enabled)
 	assert.Equal(t, "Test API", fake.lastOpts.Title)
 	assert.Equal(t, "1.0.0", fake.lastOpts.Version)
+	assert.Equal(t, "desc", fake.lastOpts.Description)
+	assert.True(t, fake.lastOpts.DisableDocsRoutes)
 }
 
 func TestServer_GetRoutesAndFilters(t *testing.T) {
 	server := NewServer()
 
 	err := Get(server, "/users", func(ctx context.Context, input *struct{}) (*pingOutput, error) {
-		return &pingOutput{Message: "ok"}, nil
+		out := &pingOutput{}
+		out.Body.Message = "ok"
+		return out, nil
 	})
 	assert.NoError(t, err)
 

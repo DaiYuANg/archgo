@@ -127,11 +127,9 @@ func (m *OrderedMap[K, V]) Values() []V {
 	if m == nil || len(m.order) == 0 {
 		return nil
 	}
-	out := make([]V, 0, len(m.order))
-	for _, key := range m.order {
-		out = append(out, m.items[key])
-	}
-	return out
+	return lo.Map(m.order, func(key K, _ int) V {
+		return m.items[key]
+	})
 }
 
 // All returns copied unordered built-in map.

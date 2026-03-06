@@ -5,7 +5,7 @@ import (
 	"github.com/samber/mo"
 )
 
-// Source 配置来源
+// Source documents related behavior.
 type Source int
 
 const (
@@ -14,7 +14,7 @@ const (
 	SourceEnv
 )
 
-// ValidateLevel 验证级别
+// ValidateLevel documents related behavior.
 type ValidateLevel int
 
 const (
@@ -23,7 +23,7 @@ const (
 	ValidateLevelRequired
 )
 
-// Options 配置加载选项
+// Options loads related configuration.
 type Options struct {
 	dotenvFiles     []string
 	envPrefix       string
@@ -36,10 +36,10 @@ type Options struct {
 	ignoreDotenvErr bool
 }
 
-// Option 配置选项函数（非泛型）
+// Option documents related behavior.
 type Option func(*Options)
 
-// NewOptions 创建默认选项
+// NewOptions creates related functionality.
 func NewOptions() *Options {
 	return &Options{
 		dotenvFiles:     []string{".env", ".env.local"},
@@ -49,7 +49,7 @@ func NewOptions() *Options {
 	}
 }
 
-// WithDotenv 启用 .env 文件加载
+// WithDotenv enables related functionality.
 func WithDotenv(files ...string) Option {
 	return func(o *Options) {
 		if len(files) > 0 {
@@ -58,46 +58,46 @@ func WithDotenv(files ...string) Option {
 	}
 }
 
-// WithEnvPrefix 设置环境变量前缀
+// WithEnvPrefix configures related behavior.
 func WithEnvPrefix(prefix string) Option {
 	return func(o *Options) { o.envPrefix = prefix }
 }
 
-// WithFiles 设置配置文件路径
+// WithFiles configures related behavior.
 func WithFiles(files ...string) Option {
 	return func(o *Options) { o.files = files }
 }
 
-// WithPriority 设置配置源优先级
+// WithPriority configures related behavior.
 func WithPriority(p ...Source) Option {
 	return func(o *Options) { o.priority = p }
 }
 
-// WithDefaults 设置默认值（map 形式）
+// WithDefaults configures related behavior.
 func WithDefaults(m map[string]any) Option {
 	return func(o *Options) {
 		o.defaults = mo.Some(m)
 	}
 }
 
-// WithDefaultsStruct 设置默认值（struct 形式）
+// WithDefaultsStruct configures related behavior.
 func WithDefaultsStruct(s any) Option {
 	return func(o *Options) {
 		o.defaultsStruct = s
 	}
 }
 
-// WithValidator 设置自定义 validator
+// WithValidator configures related behavior.
 func WithValidator(v *validator.Validate) Option {
 	return func(o *Options) { o.validate = v }
 }
 
-// WithValidateLevel 设置验证级别
+// WithValidateLevel configures related behavior.
 func WithValidateLevel(level ValidateLevel) Option {
 	return func(o *Options) { o.validateLevel = level }
 }
 
-// WithIgnoreDotenvError 设置是否忽略 .env 加载错误
+// WithIgnoreDotenvError configures related behavior.
 func WithIgnoreDotenvError(ignore bool) Option {
 	return func(o *Options) { o.ignoreDotenvErr = ignore }
 }
