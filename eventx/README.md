@@ -5,6 +5,7 @@
 - 泛型强类型订阅：`Subscribe[T Event](...)`
 - 同步发布：`Publish`
 - 异步发布：`PublishAsync`（worker 池）
+- 可选并行分发：`WithParallelDispatch(true)`
 - middleware 链：恢复 panic、观测耗时等
 - 优雅关闭：`Close` 等待队列与 in-flight handler 完成
 

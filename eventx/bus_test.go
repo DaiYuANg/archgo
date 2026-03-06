@@ -15,6 +15,10 @@ type userCreated struct {
 	ID int
 }
 
+func nilContext() context.Context {
+	return nil
+}
+
 func (e userCreated) Name() string {
 	return "user.created"
 }
@@ -72,6 +76,50 @@ func TestNilBus(t *testing.T) {
 
 	err = nilBus.PublishAsync(context.Background(), userCreated{ID: 1})
 	require.ErrorIs(t, err, ErrNilBus)
+}
+
+func TestPublishNilContext(t *testing.T) {
+	t.Parallel()
+
+	bus := New()
+	defer func() { _ = bus.Close() }()
+
+	_, err := Subscribe(bus, func(ctx context.Context, evt userCreated) error {
+		if ctx == nil {
+			return errors.New("nil context")
+		}
+		return nil
+	})
+	require.NoError(t, err)
+
+	err = bus.Publish(nilContext(), userCreated{ID: 1})
+	require.NoError(t, err)
+}
+
+func TestPublishAsyncNilContext(t *testing.T) {
+	t.Parallel()
+
+	bus := New(
+		WithAsyncWorkers(1),
+		WithAsyncQueueSize(8),
+	)
+
+	nilCtx := make(chan bool, 1)
+	_, err := Subscribe(bus, func(ctx context.Context, evt userCreated) error {
+		nilCtx <- (ctx == nil)
+		return nil
+	})
+	require.NoError(t, err)
+
+	require.NoError(t, bus.PublishAsync(nilContext(), userCreated{ID: 1}))
+	require.NoError(t, bus.Close())
+
+	select {
+	case gotNil := <-nilCtx:
+		require.False(t, gotNil)
+	case <-time.After(time.Second):
+		t.Fatal("async handler did not run in time")
+	}
 }
 
 func TestUnsubscribe(t *testing.T) {
@@ -295,4 +343,72 @@ func TestSubscriberCount(t *testing.T) {
 	require.Equal(t, 1, bus.SubscriberCount())
 	unsub2()
 	require.Equal(t, 0, bus.SubscriberCount())
+}
+
+func TestParallelDispatchHandlersRunConcurrently(t *testing.T) {
+	t.Parallel()
+
+	bus := New(WithParallelDispatch(true))
+	defer func() { _ = bus.Close() }()
+
+	started := make(chan struct{}, 2)
+	release := make(chan struct{})
+
+	_, err := Subscribe(bus, func(ctx context.Context, evt userCreated) error {
+		started <- struct{}{}
+		<-release
+		return nil
+	})
+	require.NoError(t, err)
+
+	_, err = Subscribe(bus, func(ctx context.Context, evt userCreated) error {
+		started <- struct{}{}
+		<-release
+		return nil
+	})
+	require.NoError(t, err)
+
+	done := make(chan error, 1)
+	go func() {
+		done <- bus.Publish(context.Background(), userCreated{ID: 1})
+	}()
+
+	for i := 0; i < 2; i++ {
+		select {
+		case <-started:
+		case <-time.After(time.Second):
+			t.Fatal("handlers did not start in parallel in time")
+		}
+	}
+
+	close(release)
+
+	select {
+	case err = <-done:
+		require.NoError(t, err)
+	case <-time.After(time.Second):
+		t.Fatal("publish did not finish in time")
+	}
+}
+
+func TestParallelDispatchJoinErrors(t *testing.T) {
+	t.Parallel()
+
+	bus := New(WithParallelDispatch(true))
+	defer func() { _ = bus.Close() }()
+
+	_, err := Subscribe(bus, func(ctx context.Context, evt userCreated) error {
+		return errors.New("err-a")
+	})
+	require.NoError(t, err)
+
+	_, err = Subscribe(bus, func(ctx context.Context, evt userCreated) error {
+		return errors.New("err-b")
+	})
+	require.NoError(t, err)
+
+	err = bus.Publish(context.Background(), userCreated{ID: 1})
+	require.Error(t, err)
+	require.ErrorContains(t, err, "err-a")
+	require.ErrorContains(t, err, "err-b")
 }

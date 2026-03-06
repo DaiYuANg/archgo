@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/DaiYuANg/arcgo/httpx/adapter"
@@ -23,6 +24,7 @@ import (
 type Server struct {
 	adapter     adapter.Adapter
 	basePath    string
+	routesMu    sync.RWMutex
 	routes      []RouteInfo
 	logger      *slog.Logger
 	printRoutes bool
@@ -145,8 +147,9 @@ func (s *Server) printRoutesIfEnabled() {
 		return
 	}
 
-	s.logger.Info("Registered routes", slog.Int("count", len(s.routes)))
-	lo.ForEach(s.routes, func(route RouteInfo, _ int) {
+	routes := s.routesSnapshot()
+	s.logger.Info("Registered routes", slog.Int("count", len(routes)))
+	lo.ForEach(routes, func(route RouteInfo, _ int) {
 		s.logger.Info("  "+route.String(),
 			slog.String("method", route.Method),
 			slog.String("path", route.Path),
@@ -157,21 +160,24 @@ func (s *Server) printRoutesIfEnabled() {
 
 // GetRoutes 返回所有路由。
 func (s *Server) GetRoutes() []RouteInfo {
-	return lo.Map(s.routes, func(route RouteInfo, _ int) RouteInfo {
+	routes := s.routesSnapshot()
+	return lo.Map(routes, func(route RouteInfo, _ int) RouteInfo {
 		return route
 	})
 }
 
 // GetRoutesByMethod 按方法过滤路由。
 func (s *Server) GetRoutesByMethod(method string) []RouteInfo {
-	return lo.Filter(s.routes, func(route RouteInfo, _ int) bool {
+	routes := s.routesSnapshot()
+	return lo.Filter(routes, func(route RouteInfo, _ int) bool {
 		return route.Method == strings.ToUpper(method)
 	})
 }
 
 // GetRoutesByPath 按路径过滤路由。
 func (s *Server) GetRoutesByPath(prefix string) []RouteInfo {
-	return lo.Filter(s.routes, func(route RouteInfo, _ int) bool {
+	routes := s.routesSnapshot()
+	return lo.Filter(routes, func(route RouteInfo, _ int) bool {
 		return len(prefix) == 0 || strings.HasPrefix(route.Path, prefix)
 	})
 }
@@ -179,13 +185,16 @@ func (s *Server) GetRoutesByPath(prefix string) []RouteInfo {
 // HasRoute 检查路由是否存在。
 func (s *Server) HasRoute(method, path string) bool {
 	upperMethod := strings.ToUpper(method)
-	return lo.SomeBy(s.routes, func(route RouteInfo) bool {
+	routes := s.routesSnapshot()
+	return lo.SomeBy(routes, func(route RouteInfo) bool {
 		return route.Method == upperMethod && route.Path == path
 	})
 }
 
 // RouteCount 返回路由数量。
 func (s *Server) RouteCount() int {
+	s.routesMu.RLock()
+	defer s.routesMu.RUnlock()
 	return len(s.routes)
 }
 
@@ -203,10 +212,11 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 // ListenAndServe 启动服务器。
 func (s *Server) ListenAndServe(addr string) error {
+	routeCount := s.RouteCount()
 	s.logger.Info("Starting server",
 		slog.String("address", addr),
 		slog.String("adapter", s.adapter.Name()),
-		slog.Int("routes", len(s.routes)),
+		slog.Int("routes", routeCount),
 		slog.Bool("huma_enabled", s.humaOpts.Enabled),
 	)
 
@@ -274,4 +284,16 @@ func (s *Server) HumaAPI() huma.API {
 // HasHuma 检查是否启用了 Huma。
 func (s *Server) HasHuma() bool {
 	return s.adapter.HasHuma()
+}
+
+func (s *Server) addRoute(route RouteInfo) {
+	s.routesMu.Lock()
+	defer s.routesMu.Unlock()
+	s.routes = append(s.routes, route)
+}
+
+func (s *Server) routesSnapshot() []RouteInfo {
+	s.routesMu.RLock()
+	defer s.routesMu.RUnlock()
+	return append([]RouteInfo(nil), s.routes...)
 }

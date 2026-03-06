@@ -120,7 +120,7 @@ func registerTypedWithPrefix[I, O any](s *Server, prefix, method, path string, h
 		s.adapter.Handle(upperMethod, fullPath, wrapTypedHandler(s, handler))
 	}
 
-	s.routes = append(s.routes, RouteInfo{
+	s.addRoute(RouteInfo{
 		Method:      upperMethod,
 		Path:        fullPath,
 		HandlerName: handlerName(handler),

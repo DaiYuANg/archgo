@@ -29,6 +29,7 @@ type Bus struct {
 	closed      bool
 	nextID      uint64
 	subsByType  map[reflect.Type]map[uint64]*subscription
+	parallel    bool
 	middleware  []Middleware
 	onAsyncErr  asyncErrorHandler
 	asyncQueue  chan publishTask
@@ -48,6 +49,7 @@ func New(opts ...Option) *Bus {
 
 	b := &Bus{
 		subsByType: make(map[reflect.Type]map[uint64]*subscription),
+		parallel:   cfg.parallel,
 		middleware: cfg.middleware,
 		onAsyncErr: cfg.onAsyncError,
 	}
@@ -135,6 +137,9 @@ func (b *Bus) Publish(ctx context.Context, event Event) error {
 	if event == nil {
 		return ErrNilEvent
 	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
 
 	b.mu.RLock()
 	if b.closed {
@@ -154,6 +159,9 @@ func (b *Bus) PublishAsync(ctx context.Context, event Event) error {
 	}
 	if event == nil {
 		return ErrNilEvent
+	}
+	if ctx == nil {
+		ctx = context.Background()
 	}
 	if b.asyncQueue == nil {
 		// Keep behavior predictable: fallback to sync when async is disabled.
@@ -249,10 +257,21 @@ func (b *Bus) dispatch(ctx context.Context, event Event, handlers []HandlerFunc)
 	if len(handlers) == 0 {
 		return nil
 	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
 
 	b.dispatchWG.Add(1)
 	defer b.dispatchWG.Done()
 
+	if b.parallel {
+		return b.dispatchParallel(ctx, event, handlers)
+	}
+
+	return b.dispatchSerial(ctx, event, handlers)
+}
+
+func (b *Bus) dispatchSerial(ctx context.Context, event Event, handlers []HandlerFunc) error {
 	var errs []error
 	for _, handler := range handlers {
 		if handler == nil {
@@ -261,6 +280,33 @@ func (b *Bus) dispatch(ctx context.Context, event Event, handlers []HandlerFunc)
 		if err := handler(ctx, event); err != nil {
 			errs = append(errs, err)
 		}
+	}
+	return errors.Join(errs...)
+}
+
+func (b *Bus) dispatchParallel(ctx context.Context, event Event, handlers []HandlerFunc) error {
+	errCh := make(chan error, len(handlers))
+	var wg sync.WaitGroup
+
+	for _, handler := range handlers {
+		if handler == nil {
+			continue
+		}
+		wg.Add(1)
+		go func(h HandlerFunc) {
+			defer wg.Done()
+			if err := h(ctx, event); err != nil {
+				errCh <- err
+			}
+		}(handler)
+	}
+
+	wg.Wait()
+	close(errCh)
+
+	var errs []error
+	for err := range errCh {
+		errs = append(errs, err)
 	}
 	return errors.Join(errs...)
 }

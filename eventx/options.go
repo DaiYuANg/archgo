@@ -12,6 +12,7 @@ type asyncErrorHandler func(ctx context.Context, event Event, err error)
 type options struct {
 	asyncWorkers   int
 	asyncQueueSize int
+	parallel       bool
 	middleware     []Middleware
 	onAsyncError   asyncErrorHandler
 }
@@ -20,6 +21,7 @@ func defaultOptions() options {
 	return options{
 		asyncWorkers:   defaultAsyncWorkers,
 		asyncQueueSize: defaultAsyncQueueSize,
+		parallel:       false,
 		middleware:     nil,
 		onAsyncError:   nil,
 	}
@@ -39,6 +41,14 @@ func WithAsyncWorkers(workers int) Option {
 func WithAsyncQueueSize(size int) Option {
 	return func(o *options) {
 		o.asyncQueueSize = size
+	}
+}
+
+// WithParallelDispatch controls whether handlers of the same event are dispatched in parallel.
+// Default is false (serial dispatch).
+func WithParallelDispatch(enabled bool) Option {
+	return func(o *options) {
+		o.parallel = enabled
 	}
 }
 
