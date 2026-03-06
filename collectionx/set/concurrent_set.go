@@ -34,6 +34,23 @@ func (s *ConcurrentSet[T]) Add(items ...T) {
 	}
 }
 
+// AddIfAbsent inserts one item only when it does not exist.
+// Returns true when inserted, false when it already exists.
+func (s *ConcurrentSet[T]) AddIfAbsent(item T) bool {
+	if s == nil {
+		return false
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.ensureInitLocked(1)
+	if _, exists := s.items[item]; exists {
+		return false
+	}
+	s.items[item] = struct{}{}
+	return true
+}
+
 // Remove deletes an item and reports whether it existed.
 func (s *ConcurrentSet[T]) Remove(item T) bool {
 	if s == nil {

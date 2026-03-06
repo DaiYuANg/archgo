@@ -130,6 +130,19 @@ configx.Load(&cfg,
 )
 ```
 
+### 可选可观测性（OTel + Prometheus）
+
+```go
+otelObs := otelobs.New()
+promObs := promobs.New()
+obs := observability.Multi(otelObs, promObs)
+
+configx.Load(&cfg,
+    configx.WithObservability(obs),
+    configx.WithFiles("config.yaml"),
+)
+```
+
 ### 结构体验证
 
 ```go
@@ -166,8 +179,10 @@ configx.Load(&cfg,
 | `WithFiles(files ...string)` | 设置配置文件路径 |
 | `WithPriority(p ...Source)` | 设置配置源优先级 |
 | `WithDefaults(m map[string]any)` | 设置默认值 |
+| `WithDefaultsTyped[T any](m map[string]T)` | 从泛型 map 设置默认值 |
 | `WithValidateLevel(level ValidateLevel)` | 设置验证级别 |
 | `WithValidator(v *validator.Validate)` | 设置自定义 validator |
+| `WithObservability(obs)` | 注入可选可观测性能力 |
 
 ### Config 方法
 
@@ -210,6 +225,10 @@ APP_PORT=3000
 DATABASE_HOST=db.example.com
 DATABASE_PORT=5432
 ```
+
+## 示例
+
+- [observability](./examples/observability)：演示 `configx` 接入 OTel + Prometheus。
 
 ## License
 

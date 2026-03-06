@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/samber/oops"
+	"go.opentelemetry.io/otel/trace"
 )
 
 type failingCloser struct {
@@ -414,5 +415,60 @@ func TestLoggerClose_ReturnsJoinedError(t *testing.T) {
 	}
 	if !errors.Is(err, errB) {
 		t.Fatal("expected joined error to include errB")
+	}
+}
+
+func TestWithTraceContext(t *testing.T) {
+	logger, err := New(WithConsole(true))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = logger.Close() }()
+
+	invalid := logger.WithTraceContext(context.Background())
+	if invalid != logger {
+		t.Fatal("expected same logger for context without span")
+	}
+
+	traceID, traceIDErr := trace.TraceIDFromHex("4bf92f3577b34da6a3ce929d0e0e4736")
+	if traceIDErr != nil {
+		t.Fatal(traceIDErr)
+	}
+	spanID, spanIDErr := trace.SpanIDFromHex("00f067aa0ba902b7")
+	if spanIDErr != nil {
+		t.Fatal(spanIDErr)
+	}
+
+	sc := trace.NewSpanContext(trace.SpanContextConfig{
+		TraceID:    traceID,
+		SpanID:     spanID,
+		TraceFlags: trace.FlagsSampled,
+		Remote:     true,
+	})
+	ctx := trace.ContextWithSpanContext(context.Background(), sc)
+
+	withTrace := logger.WithTraceContext(ctx)
+	if withTrace == logger {
+		t.Fatal("expected derived logger when span context exists")
+	}
+}
+
+func TestWithFieldTypedHelpers(t *testing.T) {
+	logger, err := New(WithConsole(true), WithDebugLevel())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = logger.Close() }()
+
+	typedField := WithFieldT(logger, "retry", 3)
+	if typedField == nil {
+		t.Fatal("expected non-nil logger")
+	}
+
+	typedFields := WithFieldsT(logger, map[string]int{
+		"batch": 7,
+	})
+	if typedFields == nil {
+		t.Fatal("expected non-nil logger")
 	}
 }

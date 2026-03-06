@@ -73,6 +73,18 @@ if errors.Is(err, eventx.ErrAsyncQueueFull) {
 }
 ```
 
+## Optional Observability
+
+```go
+otelObs := otelobs.New()
+promObs := promobs.New()
+obs := observability.Multi(otelObs, promObs)
+
+bus := eventx.New(
+    eventx.WithObservability(obs),
+)
+```
+
 Behavior notes:
 
 - If async queue/workers are disabled, `PublishAsync` falls back to sync `Publish`.
@@ -175,3 +187,7 @@ Pass cancellable contexts and enforce timeouts in handlers.
 - Publishing high-volume firehose traffic without queue/backpressure planning.
 - Enabling parallel dispatch while also requiring strict order guarantees.
 - Ignoring async errors when business-critical events are involved.
+
+## Example
+
+- [observability](./examples/observability): event bus with optional OTel + Prometheus observability.

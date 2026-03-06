@@ -4,9 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"reflect"
+	"strings"
 	"sync"
+	"time"
 
+	"github.com/DaiYuANg/arcgo/observability"
 	"github.com/samber/lo"
 )
 
@@ -27,18 +31,28 @@ type publishTask struct {
 
 // Bus is an in-memory strongly typed event bus.
 type Bus struct {
-	mu          sync.RWMutex
-	closed      bool
-	nextID      uint64
-	subsByType  map[reflect.Type]map[uint64]*subscription
-	parallel    bool
-	middleware  []Middleware
-	onAsyncErr  asyncErrorHandler
-	asyncQueue  chan publishTask
-	workerWG    sync.WaitGroup
-	queueTaskWG sync.WaitGroup
-	dispatchWG  sync.WaitGroup
+	mu            sync.RWMutex
+	closed        bool
+	nextID        uint64
+	subsByType    map[reflect.Type]map[uint64]*subscription
+	parallel      bool
+	middleware    []Middleware
+	onAsyncErr    asyncErrorHandler
+	asyncQueue    chan publishTask
+	workerWG      sync.WaitGroup
+	queueTaskWG   sync.WaitGroup
+	dispatchWG    sync.WaitGroup
+	observability observability.Observability
+	logger        *slog.Logger
 }
+
+const (
+	metricDispatchTotal           = "eventx_dispatch_total"
+	metricDispatchDurationMS      = "eventx_dispatch_duration_ms"
+	metricAsyncEnqueueTotal       = "eventx_async_enqueue_total"
+	metricAsyncEnqueueDurationMS  = "eventx_async_enqueue_duration_ms"
+	metricAsyncDispatchErrorTotal = "eventx_async_dispatch_error_total"
+)
 
 // New creates a new Bus.
 func New(opts ...Option) *Bus {
@@ -50,11 +64,13 @@ func New(opts ...Option) *Bus {
 	})
 
 	b := &Bus{
-		subsByType: make(map[reflect.Type]map[uint64]*subscription),
-		parallel:   cfg.parallel,
-		middleware: cfg.middleware,
-		onAsyncErr: cfg.onAsyncError,
+		subsByType:    make(map[reflect.Type]map[uint64]*subscription),
+		parallel:      cfg.parallel,
+		middleware:    cfg.middleware,
+		onAsyncErr:    cfg.onAsyncError,
+		observability: observability.Normalize(cfg.observability, nil),
 	}
+	b.logger = b.observability.Logger().With("component", "eventx.bus")
 
 	if cfg.asyncWorkers > 0 && cfg.asyncQueueSize > 0 {
 		b.asyncQueue = make(chan publishTask, cfg.asyncQueueSize)
@@ -151,7 +167,7 @@ func (b *Bus) Publish(ctx context.Context, event Event) error {
 	handlers := b.snapshotHandlersByEventTypeLocked(reflect.TypeOf(event))
 	b.mu.RUnlock()
 
-	return b.dispatch(ctx, event, handlers)
+	return b.dispatch(ctx, event, handlers, "sync")
 }
 
 // PublishAsync enqueues one event for asynchronous dispatch.
@@ -170,18 +186,52 @@ func (b *Bus) PublishAsync(ctx context.Context, event Event) error {
 		return b.Publish(ctx, event)
 	}
 
+	obs := b.observabilitySafe()
+	start := time.Now()
+	ctx, span := obs.StartSpan(ctx, "eventx.publish.async.enqueue",
+		observability.String("event_name", eventName(event)),
+	)
+	defer span.End()
+
 	b.mu.RLock()
 	defer b.mu.RUnlock()
 	if b.closed {
+		err := ErrBusClosed
+		span.RecordError(err)
+		obs.AddCounter(ctx, metricAsyncEnqueueTotal, 1,
+			observability.String("result", "closed"),
+			observability.String("event_name", eventName(event)),
+		)
+		obs.RecordHistogram(ctx, metricAsyncEnqueueDurationMS, float64(time.Since(start).Milliseconds()),
+			observability.String("result", "closed"),
+			observability.String("event_name", eventName(event)),
+		)
 		return ErrBusClosed
 	}
 
 	b.queueTaskWG.Add(1)
 	select {
 	case b.asyncQueue <- publishTask{ctx: ctx, event: event}:
+		obs.AddCounter(ctx, metricAsyncEnqueueTotal, 1,
+			observability.String("result", "enqueued"),
+			observability.String("event_name", eventName(event)),
+		)
+		obs.RecordHistogram(ctx, metricAsyncEnqueueDurationMS, float64(time.Since(start).Milliseconds()),
+			observability.String("result", "enqueued"),
+			observability.String("event_name", eventName(event)),
+		)
 		return nil
 	default:
 		b.queueTaskWG.Done()
+		span.RecordError(ErrAsyncQueueFull)
+		obs.AddCounter(ctx, metricAsyncEnqueueTotal, 1,
+			observability.String("result", "queue_full"),
+			observability.String("event_name", eventName(event)),
+		)
+		obs.RecordHistogram(ctx, metricAsyncEnqueueDurationMS, float64(time.Since(start).Milliseconds()),
+			observability.String("result", "queue_full"),
+			observability.String("event_name", eventName(event)),
+		)
 		return ErrAsyncQueueFull
 	}
 }
@@ -232,9 +282,19 @@ func (b *Bus) workerLoop() {
 		handlers := b.snapshotHandlersByEventTypeLocked(reflect.TypeOf(task.event))
 		b.mu.RUnlock()
 
-		err := b.dispatch(task.ctx, task.event, handlers)
+		err := b.dispatch(task.ctx, task.event, handlers, "async")
 		if err != nil && b.onAsyncErr != nil {
 			b.onAsyncErr(task.ctx, task.event, err)
+		} else if err != nil {
+			b.logger.Warn("async dispatch failed",
+				"event_name", eventName(task.event),
+				"error", err.Error(),
+			)
+		}
+		if err != nil {
+			b.observabilitySafe().AddCounter(task.ctx, metricAsyncDispatchErrorTotal, 1,
+				observability.String("event_name", eventName(task.event)),
+			)
 		}
 		b.queueTaskWG.Done()
 	}
@@ -254,7 +314,7 @@ func (b *Bus) snapshotHandlersByEventTypeLocked(eventType reflect.Type) []Handle
 	})
 }
 
-func (b *Bus) dispatch(ctx context.Context, event Event, handlers []HandlerFunc) error {
+func (b *Bus) dispatch(ctx context.Context, event Event, handlers []HandlerFunc, mode string) error {
 	if len(handlers) == 0 {
 		return nil
 	}
@@ -262,14 +322,44 @@ func (b *Bus) dispatch(ctx context.Context, event Event, handlers []HandlerFunc)
 		ctx = context.Background()
 	}
 
+	obs := b.observabilitySafe()
+	start := time.Now()
+	ctx, span := obs.StartSpan(ctx, "eventx.dispatch",
+		observability.String("mode", mode),
+		observability.String("event_name", eventName(event)),
+		observability.Int64("handlers", int64(len(handlers))),
+	)
+	defer span.End()
+
+	result := "success"
+	defer func() {
+		obs.AddCounter(ctx, metricDispatchTotal, 1,
+			observability.String("mode", mode),
+			observability.String("result", result),
+			observability.String("event_name", eventName(event)),
+		)
+		obs.RecordHistogram(ctx, metricDispatchDurationMS, float64(time.Since(start).Milliseconds()),
+			observability.String("mode", mode),
+			observability.String("result", result),
+			observability.String("event_name", eventName(event)),
+		)
+	}()
+
 	b.dispatchWG.Add(1)
 	defer b.dispatchWG.Done()
 
+	var err error
 	if b.parallel {
-		return b.dispatchParallel(ctx, event, handlers)
+		err = b.dispatchParallel(ctx, event, handlers)
+	} else {
+		err = b.dispatchSerial(ctx, event, handlers)
 	}
 
-	return b.dispatchSerial(ctx, event, handlers)
+	if err != nil {
+		result = "error"
+		span.RecordError(err)
+	}
+	return err
 }
 
 func (b *Bus) dispatchSerial(ctx context.Context, event Event, handlers []HandlerFunc) error {
@@ -308,4 +398,23 @@ func (b *Bus) dispatchParallel(ctx context.Context, event Event, handlers []Hand
 		errs = append(errs, err)
 	}
 	return errors.Join(errs...)
+}
+
+func (b *Bus) observabilitySafe() observability.Observability {
+	if b == nil {
+		return observability.Nop()
+	}
+	return observability.Normalize(b.observability, b.logger)
+}
+
+func eventName(event Event) string {
+	if event == nil {
+		return ""
+	}
+
+	name := strings.TrimSpace(event.Name())
+	if name != "" {
+		return name
+	}
+	return reflect.TypeOf(event).String()
 }

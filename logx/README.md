@@ -74,6 +74,16 @@ slogLogger := logx.NewSlog(logger)
 slogLogger.Info("hello", "module", "billing")
 ```
 
+### 6) Attach trace/span IDs from context
+
+```go
+ctx := trace.ContextWithSpanContext(context.Background(), spanContext)
+
+logx.WithFieldT(logger, "tenant", "acme").
+    WithTraceContext(ctx).
+    Info("request accepted")
+```
+
 ## Level Helpers
 
 - Parse from string: `ParseLevel("debug")`

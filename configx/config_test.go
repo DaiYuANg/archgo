@@ -35,6 +35,16 @@ func TestWithDefaultsStruct(t *testing.T) {
 	assert.Equal(t, 3000, cfg.GetInt("port"))
 }
 
+func TestWithDefaultsTyped(t *testing.T) {
+	cfg, err := LoadConfig(
+		WithDefaultsTyped(map[string]int{
+			"port": 7001,
+		}),
+	)
+	assert.NoError(t, err)
+	assert.Equal(t, 7001, cfg.GetInt("port"))
+}
+
 func TestLoadT_Generic(t *testing.T) {
 	result := LoadT[SimpleConfig](
 		WithDefaults(map[string]any{
@@ -47,6 +57,18 @@ func TestLoadT_Generic(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, "gen", cfg.Name)
 	assert.Equal(t, 9000, cfg.Port)
+}
+
+func TestLoadTErr_Generic(t *testing.T) {
+	cfg, err := LoadTErr[SimpleConfig](
+		WithDefaults(map[string]any{
+			"name": "tuple",
+			"port": 9100,
+		}),
+	)
+	assert.NoError(t, err)
+	assert.Equal(t, "tuple", cfg.Name)
+	assert.Equal(t, 9100, cfg.Port)
 }
 
 func TestValidate_Required(t *testing.T) {

@@ -40,13 +40,18 @@ func main() {
 	}
 
 	monitored := middleware.PrometheusMiddleware(middleware.OpenTelemetryMiddleware(server.Handler()))
-
-	mux := http.NewServeMux()
-	mux.Handle("/", monitored)
-	mux.Handle("/metrics", middleware.MetricsHandler())
+	server.Adapter().Handle(httpx.MethodGet, "/metrics", func(
+		ctx context.Context,
+		w http.ResponseWriter,
+		r *http.Request,
+	) error {
+		_ = ctx
+		middleware.MetricsHandler().ServeHTTP(w, r)
+		return nil
+	})
 
 	fmt.Println("Monitoring server starting on :8080")
-	if err = http.ListenAndServe(":8080", mux); err != nil {
+	if err = http.ListenAndServe(":8080", monitored); err != nil {
 		panic(err)
 	}
 }

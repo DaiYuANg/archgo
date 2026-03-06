@@ -59,8 +59,24 @@ func main() {
 }
 ```
 
+## 可选可观测性
+
+```go
+otelObs := otelobs.New()
+promObs := promobs.New()
+obs := observability.Multi(otelObs, promObs)
+
+bus := eventx.New(
+    eventx.WithObservability(obs),
+)
+```
+
 ## 设计说明
 
 - 路由按 Go 运行时类型分发（`reflect.TypeOf(event)`），类型必须匹配订阅时的 `T`。
 - `Event.Name()` 主要用于观测和语义表达，不作为路由键。
 - `PublishAsync` 默认非阻塞入队；队列满返回 `ErrAsyncQueueFull`。
+
+## 示例
+
+- [observability](./examples/observability)：演示 `eventx` 接入 OTel + Prometheus。

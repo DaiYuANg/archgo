@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	collectionlist "github.com/DaiYuANg/arcgo/collectionx/list"
 	collectionset "github.com/DaiYuANg/arcgo/collectionx/set"
 	"github.com/DaiYuANg/arcgo/httpx/adapter"
 	"github.com/DaiYuANg/arcgo/httpx/adapter/std"
@@ -29,7 +30,7 @@ type Server struct {
 	adapter     adapter.Adapter
 	basePath    string
 	routesMu    sync.RWMutex
-	routes      []RouteInfo
+	routes      *collectionlist.List[RouteInfo]
 	routeKeys   *collectionset.Set[string]
 	logger      *slog.Logger
 	printRoutes bool
@@ -124,7 +125,7 @@ func WithValidator(v *validator.Validate) ServerOption {
 func NewServer(opts ...ServerOption) *Server {
 	s := &Server{
 		logger:    slog.Default(),
-		routes:    make([]RouteInfo, 0),
+		routes:    collectionlist.NewList[RouteInfo](),
 		routeKeys: collectionset.NewSet[string](),
 		humaOpts:  adapter.DefaultHumaOptions(),
 	}
@@ -205,7 +206,7 @@ func (s *Server) HasRoute(method, path string) bool {
 func (s *Server) RouteCount() int {
 	s.routesMu.RLock()
 	defer s.routesMu.RUnlock()
-	return len(s.routes)
+	return s.routes.Len()
 }
 
 // Handler returns related data.
@@ -310,13 +311,13 @@ func (s *Server) addRoute(route RouteInfo) {
 		return
 	}
 	s.routeKeys.Add(key)
-	s.routes = append(s.routes, route)
+	s.routes.Add(route)
 }
 
 func (s *Server) routesSnapshot() []RouteInfo {
 	s.routesMu.RLock()
 	defer s.routesMu.RUnlock()
-	return append([]RouteInfo(nil), s.routes...)
+	return s.routes.Values()
 }
 
 func routeKey(method, path string) string {

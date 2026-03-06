@@ -1,7 +1,9 @@
 package configx
 
 import (
+	"github.com/DaiYuANg/arcgo/observability"
 	"github.com/go-playground/validator/v10"
+	"github.com/samber/lo"
 	"github.com/samber/mo"
 )
 
@@ -13,6 +15,20 @@ const (
 	SourceFile
 	SourceEnv
 )
+
+// String returns source name.
+func (s Source) String() string {
+	switch s {
+	case SourceDotenv:
+		return "dotenv"
+	case SourceFile:
+		return "file"
+	case SourceEnv:
+		return "env"
+	default:
+		return "unknown"
+	}
+}
 
 // ValidateLevel documents related behavior.
 type ValidateLevel int
@@ -34,6 +50,7 @@ type Options struct {
 	validate        *validator.Validate
 	validateLevel   ValidateLevel
 	ignoreDotenvErr bool
+	observability   observability.Observability
 }
 
 // Option documents related behavior.
@@ -46,6 +63,7 @@ func NewOptions() *Options {
 		priority:        []Source{SourceDotenv, SourceFile, SourceEnv},
 		validateLevel:   ValidateLevelNone,
 		ignoreDotenvErr: true,
+		observability:   observability.Nop(),
 	}
 }
 
@@ -80,11 +98,25 @@ func WithDefaults(m map[string]any) Option {
 	}
 }
 
+// WithDefaultsTyped sets default values from a typed map.
+func WithDefaultsTyped[T any](m map[string]T) Option {
+	return func(o *Options) {
+		o.defaults = mo.Some(lo.MapValues(m, func(value T, _ string) any {
+			return value
+		}))
+	}
+}
+
 // WithDefaultsStruct configures related behavior.
 func WithDefaultsStruct(s any) Option {
 	return func(o *Options) {
 		o.defaultsStruct = s
 	}
+}
+
+// WithDefaultsFrom sets default values from a typed struct.
+func WithDefaultsFrom[T any](s T) Option {
+	return WithDefaultsStruct(s)
 }
 
 // WithValidator configures related behavior.
@@ -100,4 +132,11 @@ func WithValidateLevel(level ValidateLevel) Option {
 // WithIgnoreDotenvError configures related behavior.
 func WithIgnoreDotenvError(ignore bool) Option {
 	return func(o *Options) { o.ignoreDotenvErr = ignore }
+}
+
+// WithObservability sets optional observability integration.
+func WithObservability(obs observability.Observability) Option {
+	return func(o *Options) {
+		o.observability = obs
+	}
 }

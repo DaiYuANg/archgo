@@ -10,8 +10,9 @@
 - Config file loading (`WithFiles`)
 - Environment variable loading (`WithEnvPrefix`)
 - Custom source precedence (`WithPriority`)
-- Defaults via map or struct (`WithDefaults`, `WithDefaultsStruct`)
+- Defaults via map or struct (`WithDefaults`, `WithDefaultsTyped`, `WithDefaultsStruct`, `WithDefaultsFrom`)
 - Optional validation (`WithValidateLevel`, `WithValidator`)
+- Optional observability (`WithObservability`)
 - Generic and non-generic loading entry points
 
 ## Loading Flow
@@ -118,6 +119,19 @@ all := c.All()
 _, _, _, _ = name, port, exists, all
 ```
 
+### 7) Optional observability (OTel + Prometheus)
+
+```go
+otelObs := otelobs.New()
+promObs := promobs.New()
+obs := observability.Multi(otelObs, promObs)
+
+err := configx.Load(&cfg,
+    configx.WithObservability(obs),
+    configx.WithFiles("config.yaml"),
+)
+```
+
 ## Validation Modes
 
 - `ValidateLevelNone`: no validation
@@ -201,3 +215,7 @@ Keep defaults structs simple and export fields with predictable `mapstructure` t
 - Reading config from process env directly in business code after adopting `configx`.
 - Disabling validation for critical fields (ports, credentials, URLs).
 - Mixing unrelated prefixes across multiple services in shared environments.
+
+## Example
+
+- [observability](./examples/observability): load config with optional OTel + Prometheus instrumentation.

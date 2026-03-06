@@ -15,6 +15,7 @@ import (
 	zlog "github.com/rs/zerolog/log"
 	"github.com/samber/lo"
 	oopszerolog "github.com/samber/oops/loggers/zerolog"
+	"go.opentelemetry.io/otel/trace"
 	"gopkg.in/natefinch/lumberjack.v2"
 )
 
@@ -166,6 +167,23 @@ func (l *Logger) SetGlobalLogger() {
 // WithContext documents related behavior.
 func (l *Logger) WithContext(ctx context.Context) zerolog.Context {
 	return l.logger.With().Ctx(ctx)
+}
+
+// WithTraceContext enriches logger with trace/span IDs from context when available.
+func (l *Logger) WithTraceContext(ctx context.Context) *Logger {
+	if l == nil || ctx == nil {
+		return l
+	}
+
+	spanContext := trace.SpanContextFromContext(ctx)
+	if !spanContext.IsValid() {
+		return l
+	}
+
+	return l.WithFields(map[string]interface{}{
+		"trace_id": spanContext.TraceID().String(),
+		"span_id":  spanContext.SpanID().String(),
+	})
 }
 
 // Logger returns related data.

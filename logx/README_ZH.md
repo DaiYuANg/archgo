@@ -74,6 +74,16 @@ slogLogger := logx.NewSlog(logger)
 slogLogger.Info("hello", "module", "billing")
 ```
 
+### 6) 从上下文注入 trace/span
+
+```go
+ctx := trace.ContextWithSpanContext(context.Background(), spanContext)
+
+logx.WithFieldT(logger, "tenant", "acme").
+    WithTraceContext(ctx).
+    Info("request accepted")
+```
+
 ## 级别与错误
 
 - 字符串解析：`ParseLevel("debug")`

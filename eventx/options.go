@@ -1,6 +1,10 @@
 package eventx
 
-import "context"
+import (
+	"context"
+
+	"github.com/DaiYuANg/arcgo/observability"
+)
 
 const (
 	defaultAsyncWorkers   = 4
@@ -15,6 +19,7 @@ type options struct {
 	parallel       bool
 	middleware     []Middleware
 	onAsyncError   asyncErrorHandler
+	observability  observability.Observability
 }
 
 func defaultOptions() options {
@@ -24,6 +29,7 @@ func defaultOptions() options {
 		parallel:       false,
 		middleware:     nil,
 		onAsyncError:   nil,
+		observability:  observability.Nop(),
 	}
 }
 
@@ -63,6 +69,13 @@ func WithMiddleware(mw ...Middleware) Option {
 func WithAsyncErrorHandler(handler func(ctx context.Context, event Event, err error)) Option {
 	return func(o *options) {
 		o.onAsyncError = handler
+	}
+}
+
+// WithObservability sets optional observability integration for bus runtime.
+func WithObservability(obs observability.Observability) Option {
+	return func(o *options) {
+		o.observability = obs
 	}
 }
 
