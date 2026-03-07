@@ -45,12 +45,21 @@ func (c *DocsController) Configure(opts HumaOptions) {
 
 	next := MergeHumaOptions(opts)
 	if humaOptionsEqual(c.current, next) {
+		// 配置相同，不需要更新
 		return
 	}
-	if !isZeroHumaOptions(c.current) {
+	// 只有当路径相关配置改变时，才将旧配置标记为 stale
+	if !pathsEqual(c.current, next) {
 		c.stale = append(c.stale, c.current)
 	}
 	c.current = next
+}
+
+// pathsEqual checks if the path-related fields are equal between two HumaOptions.
+func pathsEqual(a, b HumaOptions) bool {
+	return a.DocsPath == b.DocsPath &&
+		normalizeOpenAPIPath(a.OpenAPIPath) == normalizeOpenAPIPath(b.OpenAPIPath) &&
+		a.SchemasPath == b.SchemasPath
 }
 
 // ServeHTTP handles docs/OpenAPI/schema requests and reports whether it wrote a response.
@@ -69,6 +78,7 @@ func (c *DocsController) ServeHTTP(w http.ResponseWriter, r *http.Request) bool 
 
 	for _, opts := range stale {
 		if matchDocsRoute(opts, r.URL.Path) {
+			// 请求匹配 stale 配置，返回 404
 			http.NotFound(w, r)
 			return true
 		}
@@ -79,6 +89,7 @@ func (c *DocsController) ServeHTTP(w http.ResponseWriter, r *http.Request) bool 
 	}
 
 	if current.DisableDocsRoutes {
+		// docs 被禁用，返回 404
 		http.NotFound(w, r)
 		return true
 	}
@@ -88,6 +99,11 @@ func (c *DocsController) ServeHTTP(w http.ResponseWriter, r *http.Request) bool 
 	case isDocsPath(current, r.URL.Path):
 		w.Header().Set("Content-Type", "text/html")
 		_, _ = w.Write(renderDocsHTML(openAPI, current))
+		return true
+	case isOpenAPIPath(current, r.URL.Path, ""):
+		w.Header().Set("Content-Type", "application/openapi+json")
+		body, _ := json.Marshal(openAPI)
+		_, _ = w.Write(body)
 		return true
 	case isOpenAPIPath(current, r.URL.Path, ".json"):
 		w.Header().Set("Content-Type", "application/openapi+json")
@@ -127,6 +143,7 @@ func (c *DocsController) ServeHTTP(w http.ResponseWriter, r *http.Request) bool 
 
 func matchDocsRoute(opts HumaOptions, requestPath string) bool {
 	return isDocsPath(opts, requestPath) ||
+		isOpenAPIPath(opts, requestPath, "") ||
 		isOpenAPIPath(opts, requestPath, ".json") ||
 		isOpenAPIPath(opts, requestPath, ".yaml") ||
 		isOpenAPIPath(opts, requestPath, "-3.0.json") ||
@@ -142,7 +159,11 @@ func isDocsPath(opts HumaOptions, requestPath string) bool {
 }
 
 func isOpenAPIPath(opts HumaOptions, requestPath, suffix string) bool {
-	return requestPath == normalizeOpenAPIPath(opts.OpenAPIPath)+suffix
+	// 标准化配置路径（去除 .json/.yaml 后缀）
+	normalizedPath := normalizeOpenAPIPath(opts.OpenAPIPath)
+	// 标准化请求路径（去除 .json/.yaml 后缀以进行正确比较）
+	normalizedRequest := normalizeOpenAPIPath(requestPath)
+	return normalizedRequest+suffix == normalizedPath+suffix
 }
 
 func isSchemaPath(opts HumaOptions, requestPath string) bool {
@@ -246,17 +267,6 @@ func openAPIPrefix(openAPI *huma.OpenAPI) string {
 		serverURL = "/" + serverURL
 	}
 	return strings.TrimRight(serverURL, "/")
-}
-
-func isZeroHumaOptions(opts HumaOptions) bool {
-	return opts.Title == "" &&
-		opts.Version == "" &&
-		opts.Description == "" &&
-		opts.DocsPath == "" &&
-		opts.OpenAPIPath == "" &&
-		opts.SchemasPath == "" &&
-		opts.DocsRenderer == "" &&
-		!opts.DisableDocsRoutes
 }
 
 func humaOptionsEqual(a, b HumaOptions) bool {

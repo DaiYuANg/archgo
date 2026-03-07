@@ -760,10 +760,18 @@ func applyDocsOptionsToHumaOptions(dst *adapter.HumaOptions, docs DocsOptions) {
 		return
 	}
 	dst.DisableDocsRoutes = !docs.Enabled
-	dst.DocsPath = docs.DocsPath
-	dst.OpenAPIPath = docs.OpenAPIPath
-	dst.SchemasPath = docs.SchemasPath
-	dst.DocsRenderer = docs.Renderer
+	if docs.DocsPath != "" {
+		dst.DocsPath = docs.DocsPath
+	}
+	if docs.OpenAPIPath != "" {
+		dst.OpenAPIPath = docs.OpenAPIPath
+	}
+	if docs.SchemasPath != "" {
+		dst.SchemasPath = docs.SchemasPath
+	}
+	if docs.Renderer != "" {
+		dst.DocsRenderer = docs.Renderer
+	}
 }
 
 func ensureComponents(doc *huma.OpenAPI) *huma.Components {
