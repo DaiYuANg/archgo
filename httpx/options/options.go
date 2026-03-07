@@ -247,7 +247,7 @@ func WithContextDeadline(deadline time.Time) ContextOption {
 }
 
 // WithContextValue configures related behavior.
-func WithContextValue(key string, value interface{}) ContextOption {
+func WithContextValue(key string, value any) ContextOption {
 	return func(o *ContextOptions) {
 		if o.ValueKeys == nil {
 			o.ValueKeys = make(map[contextValueKey]any)
@@ -277,7 +277,7 @@ func (o *ContextOptions) Build() (context.Context, context.CancelFunc) {
 }
 
 // WithContextValueOpt mutates a ContextOptions value directly.
-func WithContextValueOpt(o *ContextOptions, key string, value interface{}) *ContextOptions {
+func WithContextValueOpt(o *ContextOptions, key string, value any) *ContextOptions {
 	if o.ValueKeys == nil {
 		o.ValueKeys = make(map[contextValueKey]any)
 	}

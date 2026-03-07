@@ -2,6 +2,7 @@ package httpx
 
 import (
 	"log/slog"
+	"maps"
 
 	"github.com/DaiYuANg/arcgo/collectionx/list"
 	"github.com/DaiYuANg/arcgo/httpx/adapter"
@@ -311,15 +312,11 @@ func cloneParam(param *huma.Param) *huma.Param {
 	}
 	if param.Examples != nil {
 		cloned.Examples = make(map[string]*huma.Example, len(param.Examples))
-		for k, v := range param.Examples {
-			cloned.Examples[k] = v
-		}
+		maps.Copy(cloned.Examples, param.Examples)
 	}
 	if param.Extensions != nil {
 		cloned.Extensions = make(map[string]any, len(param.Extensions))
-		for k, v := range param.Extensions {
-			cloned.Extensions[k] = v
-		}
+		maps.Copy(cloned.Extensions, param.Extensions)
 	}
 	return &cloned
 }
@@ -331,9 +328,7 @@ func cloneTag(tag *huma.Tag) *huma.Tag {
 	cloned := *tag
 	if tag.Extensions != nil {
 		cloned.Extensions = make(map[string]any, len(tag.Extensions))
-		for k, v := range tag.Extensions {
-			cloned.Extensions[k] = v
-		}
+		maps.Copy(cloned.Extensions, tag.Extensions)
 	}
 	return &cloned
 }
@@ -354,9 +349,7 @@ func cloneSecurityScheme(scheme *huma.SecurityScheme) *huma.SecurityScheme {
 	cloned := *scheme
 	if scheme.Extensions != nil {
 		cloned.Extensions = make(map[string]any, len(scheme.Extensions))
-		for k, v := range scheme.Extensions {
-			cloned.Extensions[k] = v
-		}
+		maps.Copy(cloned.Extensions, scheme.Extensions)
 	}
 	return &cloned
 }
@@ -366,9 +359,7 @@ func cloneExtensions(values map[string]any) map[string]any {
 		return nil
 	}
 	cloned := make(map[string]any, len(values))
-	for k, v := range values {
-		cloned[k] = v
-	}
+	maps.Copy(cloned, values)
 	return cloned
 }
 

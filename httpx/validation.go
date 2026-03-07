@@ -16,7 +16,7 @@ func (s *Server) validateInput(input any) error {
 	}
 
 	value := reflect.ValueOf(input)
-	for value.IsValid() && value.Kind() == reflect.Ptr {
+	for value.IsValid() && value.Kind() == reflect.Pointer {
 		if value.IsNil() {
 			return nil
 		}

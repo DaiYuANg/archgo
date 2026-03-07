@@ -63,10 +63,7 @@ func (s *UserStore) List(search string, limit, offset int) ([]User, int) {
 		return []User{}, total
 	}
 
-	end := offset + limit
-	if end > total {
-		end = total
-	}
+	end := min(offset+limit, total)
 
 	return items[offset:end], total
 }
