@@ -14,38 +14,76 @@ const (
 type asyncErrorHandler func(ctx context.Context, event Event, err error)
 
 type options struct {
+	// ants pool options
+	useAntsPool          bool
+	antsPoolSize         int
+	antsMaxBlockingCalls int
+
+	// legacy options (for backward compatibility)
 	asyncWorkers   int
 	asyncQueueSize int
-	parallel       bool
-	middleware     []Middleware
-	onAsyncError   asyncErrorHandler
-	observability  observability.Observability
+
+	parallel      bool
+	middleware    []Middleware
+	onAsyncError  asyncErrorHandler
+	observability observability.Observability
 }
 
 func defaultOptions() options {
 	return options{
+		useAntsPool:          true,
+		antsPoolSize:         defaultAsyncWorkers,
+		antsMaxBlockingCalls: -1, // -1 means infinite blocking calls
+
+		// legacy options
 		asyncWorkers:   defaultAsyncWorkers,
 		asyncQueueSize: defaultAsyncQueueSize,
-		parallel:       false,
-		middleware:     nil,
-		onAsyncError:   nil,
-		observability:  observability.Nop(),
+
+		parallel:      false,
+		middleware:    nil,
+		onAsyncError:  nil,
+		observability: observability.Nop(),
 	}
 }
 
 // Option configures Bus.
 type Option func(*options)
 
-// WithAsyncWorkers sets worker count for async publish. Values <= 0 disable async workers.
+// WithAntsPool enables ants goroutine pool with the given size.
+// This is the recommended way for async event dispatch.
+func WithAntsPool(size int) Option {
+	return func(o *options) {
+		o.useAntsPool = true
+		o.antsPoolSize = size
+	}
+}
+
+// WithAntsPoolWithMaxBlockingCalls configures ants pool with max blocking calls limit.
+// maxBlockingCalls <= 0 means infinite.
+func WithAntsPoolWithMaxBlockingCalls(size int, maxBlockingCalls int) Option {
+	return func(o *options) {
+		o.useAntsPool = true
+		o.antsPoolSize = size
+		o.antsMaxBlockingCalls = maxBlockingCalls
+	}
+}
+
+// WithAsyncWorkers sets worker count for async publish (legacy mode).
+// Values <= 0 disable async workers.
+// Deprecated: Use WithAntsPool instead for better performance.
 func WithAsyncWorkers(workers int) Option {
 	return func(o *options) {
+		o.useAntsPool = false
 		o.asyncWorkers = workers
 	}
 }
 
-// WithAsyncQueueSize sets async queue size. Values <= 0 disable async queueing.
+// WithAsyncQueueSize sets async queue size (legacy mode).
+// Values <= 0 disable async queueing.
+// Deprecated: Ants pool handles queueing internally.
 func WithAsyncQueueSize(size int) Option {
 	return func(o *options) {
+		o.useAntsPool = false
 		o.asyncQueueSize = size
 	}
 }

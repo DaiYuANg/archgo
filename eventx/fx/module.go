@@ -1,0 +1,49 @@
+package fx
+
+import (
+	"go.uber.org/fx"
+
+	"github.com/DaiYuANg/arcgo/eventx"
+)
+
+// EventParams defines parameters for eventx module.
+type EventParams struct {
+	fx.In
+
+	// Options for creating event bus.
+	Options []eventx.Option `optional:"true"`
+}
+
+// EventResult defines result for eventx module.
+type EventResult struct {
+	fx.Out
+
+	// Bus is the created event bus.
+	Bus *eventx.Bus
+}
+
+// NewEventBus creates a new event bus.
+func NewEventBus(params EventParams) EventResult {
+	bus := eventx.New(params.Options...)
+	return EventResult{Bus: bus}
+}
+
+// NewEventxModule creates a eventx module.
+func NewEventxModule(opts ...eventx.Option) fx.Option {
+	return fx.Module("eventx",
+		fx.Provide(
+			func() []eventx.Option { return opts },
+			NewEventBus,
+		),
+	)
+}
+
+// NewEventxModuleWithAsync creates a eventx module with ants pool enabled.
+func NewEventxModuleWithAsync(poolSize int) fx.Option {
+	return NewEventxModule(eventx.WithAntsPool(poolSize))
+}
+
+// NewEventxModuleWithParallel creates a eventx module with parallel dispatch enabled.
+func NewEventxModuleWithParallel() fx.Option {
+	return NewEventxModule(eventx.WithParallelDispatch(true))
+}
