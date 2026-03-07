@@ -1,18 +1,25 @@
 # Endpoint Pattern Example
 
-This example demonstrates how to organize HTTP handlers using the **Endpoint pattern** (similar to Controller-based design).
+This example shows the optional `Endpoint` helper layer in `httpx`.
 
-## Run the Example
+It is useful when you want to split a service into business-oriented route modules
+such as `HealthEndpoint`, `UserEndpoint`, and `OrderEndpoint`, while still using
+the same typed route APIs under the hood.
+
+## Run
 
 ```bash
 go run ./httpx/examples/endpoint
 ```
 
-## Key Concepts
+## What It Demonstrates
 
-### 1. Define an Endpoint
+- organizing routes by endpoint struct
+- registering multiple endpoints with `RegisterOnly(...)`
+- using typed route APIs inside each endpoint
+- mixing top-level routes and grouped routes
 
-Embed `httpx.BaseEndpoint` and implement `RegisterRoutes`:
+## Endpoint Shape
 
 ```go
 type UserEndpoint struct {
@@ -21,15 +28,14 @@ type UserEndpoint struct {
 
 func (e *UserEndpoint) RegisterRoutes(server *httpx.Server) {
     api := server.Group("/api/v1/users")
-    
-    _ = httpx.GroupGet(api, "/{id}", getUserHandler)
-    _ = httpx.GroupPost(api, "", createUserHandler)
+
+    httpx.MustGroupGet(api, "", listUsersHandler)
+    httpx.MustGroupGet(api, "/{id}", getUserHandler)
+    httpx.MustGroupPost(api, "", createUserHandler)
 }
 ```
 
-### 2. Register Endpoints
-
-**Simple registration (no hooks):**
+## Registration
 
 ```go
 server.RegisterOnly(
@@ -39,41 +45,15 @@ server.RegisterOnly(
 )
 ```
 
-**Registration with hooks:**
-
-```go
-server.Register(&OrderEndpoint{},
-    httpx.EndpointHooks{
-        Before: func(s *httpx.Server, e httpx.Endpoint) {
-            // Register middleware, setup, etc.
-        },
-        After: func(s *httpx.Server, e httpx.Endpoint) {
-            // Logging, cleanup, etc.
-        },
-    },
-)
-```
-
-### 3. Benefits
-
-- **Modular code**: Each endpoint encapsulates related routes
-- **Testable**: Test each endpoint independently
-- **Organized**: Group routes by business domain (User, Order, Health, etc.)
-- **Flexible**: Use hooks for cross-cutting concerns
-
 ## API Endpoints
 
-After running the example:
+- `GET /health`
+- `GET /api/v1/users`
+- `GET /api/v1/users/{id}`
+- `POST /api/v1/users`
+- `POST /api/v1/orders`
 
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/health` | Health check |
-| GET | `/api/v1/users` | List users |
-| GET | `/api/v1/users/{id}` | Get user by ID |
-| POST | `/api/v1/users` | Create user |
-| POST | `/api/v1/orders` | Create order |
+## Docs
 
-## Documentation
-
-- OpenAPI JSON: http://localhost:8080/openapi.json
-- Swagger UI: http://localhost:8080/docs
+- Docs UI: `http://localhost:8080/docs`
+- OpenAPI JSON: `http://localhost:8080/openapi.json`

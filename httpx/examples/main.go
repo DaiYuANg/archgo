@@ -3,11 +3,13 @@ package main
 import (
 	"context"
 	"fmt"
+	"log"
 
 	"github.com/DaiYuANg/arcgo/httpx"
 	"github.com/DaiYuANg/arcgo/httpx/adapter"
 	"github.com/DaiYuANg/arcgo/httpx/adapter/std"
 	"github.com/DaiYuANg/arcgo/logx"
+	"github.com/DaiYuANg/arcgo/pkg/randomport"
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-playground/validator/v10"
@@ -42,7 +44,9 @@ func main() {
 		Title:       "ArcGo API",
 		Version:     "1.0.0",
 		Description: "Typed API built with httpx",
-	})
+		DocsPath:    "/docs",
+		OpenAPIPath: "/openapi.json",
+	}).WithLogger(slogLogger)
 	stdAdapter.Router().Use(middleware.Logger, middleware.Recoverer, middleware.RequestID)
 
 	server := httpx.NewServer(
@@ -70,9 +74,13 @@ func main() {
 		return out, nil
 	}, huma.OperationTags("users"))
 
-	fmt.Println("Server starting on :8080")
-	fmt.Println("OpenAPI JSON: http://localhost:8080/openapi.json")
-	fmt.Println("Swagger UI:   http://localhost:8080/docs")
+	port := randomport.MustFind()
+	addr := fmt.Sprintf(":%d", port)
+	fmt.Printf("Server starting on %s\n", addr)
+	fmt.Printf("OpenAPI JSON: http://localhost%s/openapi.json\n", addr)
+	fmt.Printf("Swagger UI:   http://localhost%s/docs\n", addr)
 
-	server.ListenAndServe(":8080")
+	if err := server.ListenAndServe(addr); err != nil {
+		log.Fatalf("Failed to start server: %v", err)
+	}
 }

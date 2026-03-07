@@ -4,13 +4,17 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	adapterecho "github.com/DaiYuANg/arcgo/httpx/adapter/echo"
 	adapterfiber "github.com/DaiYuANg/arcgo/httpx/adapter/fiber"
 	adaptergin "github.com/DaiYuANg/arcgo/httpx/adapter/gin"
+	adapterstd "github.com/DaiYuANg/arcgo/httpx/adapter/std"
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/go-playground/validator/v10"
 	"github.com/stretchr/testify/assert"
@@ -488,4 +492,411 @@ func TestServer_GetRoutesAndFilters(t *testing.T) {
 	w := httptest.NewRecorder()
 	server.ServeHTTP(w, req)
 	_ = json.Unmarshal(w.Body.Bytes(), &resp)
+}
+
+func TestServer_WithOpenAPIInfo_UpdatesDocument(t *testing.T) {
+	server := NewServer(WithOpenAPIInfo("Arc API", "2.0.0", "typed service"))
+
+	openAPI := server.OpenAPI()
+	if assert.NotNil(t, openAPI) && assert.NotNil(t, openAPI.Info) {
+		assert.Equal(t, "Arc API", openAPI.Info.Title)
+		assert.Equal(t, "2.0.0", openAPI.Info.Version)
+		assert.Equal(t, "typed service", openAPI.Info.Description)
+	}
+}
+
+func TestServer_WithOpenAPIDocs_DisablesDefaultDocsRoutes(t *testing.T) {
+	server := NewServer(WithOpenAPIDocs(false))
+
+	docsReq := httptest.NewRequest(http.MethodGet, "/docs", nil)
+	docsRec := httptest.NewRecorder()
+	server.ServeHTTP(docsRec, docsReq)
+	assert.Equal(t, http.StatusNotFound, docsRec.Code)
+
+	openAPIReq := httptest.NewRequest(http.MethodGet, "/openapi.json", nil)
+	openAPIRec := httptest.NewRecorder()
+	server.ServeHTTP(openAPIRec, openAPIReq)
+	assert.Equal(t, http.StatusNotFound, openAPIRec.Code)
+}
+
+func TestServer_ConfigureOpenAPI_PatchesDocument(t *testing.T) {
+	server := NewServer()
+	server.ConfigureOpenAPI(func(doc *huma.OpenAPI) {
+		doc.Tags = append(doc.Tags, &huma.Tag{Name: "internal"})
+	})
+
+	openAPI := server.OpenAPI()
+	if assert.NotNil(t, openAPI) {
+		assert.Len(t, openAPI.Tags, 1)
+		assert.Equal(t, "internal", openAPI.Tags[0].Name)
+	}
+}
+
+func TestGroup_HumaMiddlewareAndModifier(t *testing.T) {
+	server := NewServer(WithBasePath("/api"))
+	group := server.Group("/v1")
+	group.UseHumaMiddleware(func(ctx huma.Context, next func(huma.Context)) {
+		ctx.AppendHeader("X-Group", "v1")
+		next(ctx)
+	})
+	group.UseSimpleOperationModifier(func(op *huma.Operation) {
+		op.Tags = append(op.Tags, "group-tag")
+	})
+
+	err := GroupGet(group, "/items", func(ctx context.Context, input *struct{}) (*pingOutput, error) {
+		out := &pingOutput{}
+		out.Body.Message = "ok"
+		return out, nil
+	})
+	assert.NoError(t, err)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/items", nil)
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusOK, rec.Code)
+	assert.Equal(t, "v1", rec.Header().Get("X-Group"))
+
+	pathItem := server.OpenAPI().Paths["/api/v1/items"]
+	if assert.NotNil(t, pathItem) && assert.NotNil(t, pathItem.Get) {
+		assert.Contains(t, pathItem.Get.Tags, "group-tag")
+	}
+}
+
+func TestServer_WithDocs_CustomPaths(t *testing.T) {
+	server := NewServer(WithDocs(DocsOptions{
+		Enabled:     true,
+		DocsPath:    "/reference",
+		OpenAPIPath: "/spec",
+		SchemasPath: "/contracts",
+		Renderer:    DocsRendererScalar,
+	}))
+
+	docsReq := httptest.NewRequest(http.MethodGet, "/reference", nil)
+	docsRec := httptest.NewRecorder()
+	server.ServeHTTP(docsRec, docsReq)
+	assert.Equal(t, http.StatusOK, docsRec.Code)
+
+	oldDocsReq := httptest.NewRequest(http.MethodGet, "/docs", nil)
+	oldDocsRec := httptest.NewRecorder()
+	server.ServeHTTP(oldDocsRec, oldDocsReq)
+	assert.Equal(t, http.StatusNotFound, oldDocsRec.Code)
+
+	specReq := httptest.NewRequest(http.MethodGet, "/spec.json", nil)
+	specRec := httptest.NewRecorder()
+	server.ServeHTTP(specRec, specReq)
+	assert.Equal(t, http.StatusOK, specRec.Code)
+	assert.Contains(t, specRec.Body.String(), "\"openapi\"")
+
+	docs := server.Docs()
+	assert.Equal(t, "/reference", docs.DocsPath)
+	assert.Equal(t, "/spec", docs.OpenAPIPath)
+	assert.Equal(t, "/contracts", docs.SchemasPath)
+	assert.Equal(t, DocsRendererScalar, docs.Renderer)
+}
+
+func TestServer_SecurityComponentsAndGlobalHeader(t *testing.T) {
+	server := NewServer(
+		WithSecurity(SecurityOptions{
+			Schemes: map[string]*huma.SecurityScheme{
+				"bearerAuth": {
+					Type:   "http",
+					Scheme: "bearer",
+				},
+			},
+			Requirements: []map[string][]string{
+				{"bearerAuth": {}},
+			},
+		}),
+		WithGlobalHeaders(&huma.Param{
+			Name:        "X-Request-Id",
+			In:          "header",
+			Description: "request correlation id",
+			Schema:      &huma.Schema{Type: "string"},
+		}),
+	)
+
+	server.RegisterComponentParameter("Locale", &huma.Param{
+		Name:   "locale",
+		In:     "query",
+		Schema: &huma.Schema{Type: "string"},
+	})
+	server.RegisterComponentHeader("RateLimit", &huma.Header{
+		Description: "rate limit",
+		Schema:      &huma.Schema{Type: "integer"},
+	})
+
+	err := Get(server, "/secure", func(ctx context.Context, input *struct{}) (*pingOutput, error) {
+		out := &pingOutput{}
+		out.Body.Message = "ok"
+		return out, nil
+	})
+	assert.NoError(t, err)
+
+	doc := server.OpenAPI()
+	if assert.NotNil(t, doc) && assert.NotNil(t, doc.Components) {
+		assert.Contains(t, doc.Components.SecuritySchemes, "bearerAuth")
+		assert.Contains(t, doc.Components.Parameters, "Locale")
+		assert.Contains(t, doc.Components.Headers, "RateLimit")
+		assert.Equal(t, []map[string][]string{{"bearerAuth": {}}}, doc.Security)
+	}
+
+	pathItem := doc.Paths["/secure"]
+	if assert.NotNil(t, pathItem) && assert.NotNil(t, pathItem.Get) {
+		if assert.Len(t, pathItem.Get.Parameters, 1) {
+			assert.Equal(t, "X-Request-Id", pathItem.Get.Parameters[0].Name)
+			assert.Equal(t, "header", pathItem.Get.Parameters[0].In)
+		}
+	}
+}
+
+func TestGroup_DefaultTagsAndSecurity(t *testing.T) {
+	server := NewServer()
+	server.RegisterSecurityScheme("apiKey", &huma.SecurityScheme{
+		Type: "apiKey",
+		Name: "X-API-Key",
+		In:   "header",
+	})
+
+	group := server.Group("/admin")
+	group.DefaultTags("admin", "protected")
+	group.DefaultSecurity(map[string][]string{
+		"apiKey": {},
+	})
+
+	err := GroupGet(group, "/stats", func(ctx context.Context, input *struct{}) (*pingOutput, error) {
+		out := &pingOutput{}
+		out.Body.Message = "ok"
+		return out, nil
+	})
+	assert.NoError(t, err)
+
+	pathItem := server.OpenAPI().Paths["/admin/stats"]
+	if assert.NotNil(t, pathItem) && assert.NotNil(t, pathItem.Get) {
+		assert.Contains(t, pathItem.Get.Tags, "admin")
+		assert.Contains(t, pathItem.Get.Tags, "protected")
+		assert.Equal(t, []map[string][]string{{"apiKey": {}}}, pathItem.Get.Security)
+	}
+}
+
+func TestServer_ConfigureDocs_RebindsRoutesAtRuntime(t *testing.T) {
+	server := NewServer()
+
+	server.ConfigureDocs(func(d *DocsOptions) {
+		d.DocsPath = "/reference"
+		d.OpenAPIPath = "/spec"
+		d.SchemasPath = "/contracts"
+		d.Renderer = DocsRendererSwaggerUI
+	})
+
+	oldDocsReq := httptest.NewRequest(http.MethodGet, "/docs", nil)
+	oldDocsRec := httptest.NewRecorder()
+	server.ServeHTTP(oldDocsRec, oldDocsReq)
+	assert.Equal(t, http.StatusNotFound, oldDocsRec.Code)
+
+	newDocsReq := httptest.NewRequest(http.MethodGet, "/reference", nil)
+	newDocsRec := httptest.NewRecorder()
+	server.ServeHTTP(newDocsRec, newDocsReq)
+	assert.Equal(t, http.StatusOK, newDocsRec.Code)
+	assert.Contains(t, newDocsRec.Body.String(), "swagger-ui")
+
+	oldSpecReq := httptest.NewRequest(http.MethodGet, "/openapi.json", nil)
+	oldSpecRec := httptest.NewRecorder()
+	server.ServeHTTP(oldSpecRec, oldSpecReq)
+	assert.Equal(t, http.StatusNotFound, oldSpecRec.Code)
+
+	newSpecReq := httptest.NewRequest(http.MethodGet, "/spec.json", nil)
+	newSpecRec := httptest.NewRecorder()
+	server.ServeHTTP(newSpecRec, newSpecReq)
+	assert.Equal(t, http.StatusOK, newSpecRec.Code)
+}
+
+func TestServer_ConfigureDocs_WithExternalAdapter(t *testing.T) {
+	stdAdapter := adapterstd.New()
+	server := NewServer(WithAdapter(stdAdapter))
+
+	server.ConfigureDocs(func(d *DocsOptions) {
+		d.Enabled = false
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/docs", nil)
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+	assert.Equal(t, http.StatusNotFound, rec.Code)
+}
+
+func TestGroup_DefaultParametersSummaryAndDescription(t *testing.T) {
+	server := NewServer()
+	group := server.Group("/reports")
+	group.DefaultParameters(&huma.Param{
+		Name:        "X-Tenant",
+		In:          "header",
+		Description: "tenant header",
+		Schema:      &huma.Schema{Type: "string"},
+	})
+	group.DefaultSummaryPrefix("Reports")
+	group.DefaultDescription("Shared reporting endpoints")
+
+	err := GroupGet(group, "/daily", func(ctx context.Context, input *struct{}) (*pingOutput, error) {
+		out := &pingOutput{}
+		out.Body.Message = "ok"
+		return out, nil
+	}, func(op *huma.Operation) {
+		op.Summary = "Daily usage"
+	})
+	assert.NoError(t, err)
+
+	pathItem := server.OpenAPI().Paths["/reports/daily"]
+	if assert.NotNil(t, pathItem) && assert.NotNil(t, pathItem.Get) {
+		assert.Equal(t, "Reports Daily usage", pathItem.Get.Summary)
+		assert.Equal(t, "Shared reporting endpoints", pathItem.Get.Description)
+		if assert.Len(t, pathItem.Get.Parameters, 1) {
+			assert.Equal(t, "X-Tenant", pathItem.Get.Parameters[0].Name)
+			assert.Equal(t, "header", pathItem.Get.Parameters[0].In)
+		}
+	}
+}
+
+func TestGroup_RegisterTagsExternalDocsAndExtensions(t *testing.T) {
+	server := NewServer()
+	group := server.Group("/admin")
+	group.RegisterTags(
+		&huma.Tag{Name: "admin", Description: "Administrative endpoints"},
+		&huma.Tag{Name: "ops", Description: "Operations"},
+	)
+	group.DefaultTags("admin", "ops")
+	group.DefaultExternalDocs(&huma.ExternalDocs{
+		Description: "Admin guide",
+		URL:         "https://example.com/admin",
+	})
+	group.DefaultExtensions(map[string]any{
+		"x-group": "admin",
+	})
+
+	err := GroupGet(group, "/health", func(ctx context.Context, input *struct{}) (*pingOutput, error) {
+		out := &pingOutput{}
+		out.Body.Message = "ok"
+		return out, nil
+	})
+	assert.NoError(t, err)
+
+	doc := server.OpenAPI()
+	if assert.NotNil(t, doc) {
+		assert.GreaterOrEqual(t, len(doc.Tags), 2)
+	}
+
+	pathItem := doc.Paths["/admin/health"]
+	if assert.NotNil(t, pathItem) && assert.NotNil(t, pathItem.Get) {
+		assert.Contains(t, pathItem.Get.Tags, "admin")
+		assert.Contains(t, pathItem.Get.Tags, "ops")
+		if assert.NotNil(t, pathItem.Get.ExternalDocs) {
+			assert.Equal(t, "https://example.com/admin", pathItem.Get.ExternalDocs.URL)
+		}
+		assert.Equal(t, "admin", pathItem.Get.Extensions["x-group"])
+	}
+}
+
+func TestServer_WithPanicRecover_Enabled(t *testing.T) {
+	server := NewServer(WithPanicRecover(true))
+
+	err := Get(server, "/panic", func(ctx context.Context, input *struct{}) (*pingOutput, error) {
+		panic("boom")
+	})
+	assert.NoError(t, err)
+
+	req := httptest.NewRequest(http.MethodGet, "/panic", nil)
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusInternalServerError, rec.Code)
+	assert.Contains(t, rec.Body.String(), "panic in handler: boom")
+}
+
+func TestServer_WithPanicRecover_Disabled(t *testing.T) {
+	server := NewServer(WithPanicRecover(false))
+
+	err := Get(server, "/panic", func(ctx context.Context, input *struct{}) (*pingOutput, error) {
+		panic("boom")
+	})
+	assert.NoError(t, err)
+
+	req := httptest.NewRequest(http.MethodGet, "/panic", nil)
+	rec := httptest.NewRecorder()
+
+	assert.Panics(t, func() {
+		server.ServeHTTP(rec, req)
+	})
+}
+
+func TestServer_WithAccessLog_LogsRequests(t *testing.T) {
+	var logs bytes.Buffer
+	logger := slog.New(slog.NewJSONHandler(&logs, nil))
+	server := NewServer(
+		WithLogger(logger),
+		WithAccessLog(true),
+	)
+
+	type in struct {
+		ID int `path:"id"`
+	}
+
+	err := Get(server, "/users/{id}", func(ctx context.Context, input *in) (*pingOutput, error) {
+		out := &pingOutput{}
+		out.Body.Message = "ok"
+		return out, nil
+	})
+	assert.NoError(t, err)
+
+	req := httptest.NewRequest(http.MethodGet, "/users/42", nil)
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusOK, rec.Code)
+	output := logs.String()
+	assert.True(t, strings.Contains(output, "\"msg\":\"httpx request\""))
+	assert.True(t, strings.Contains(output, "\"method\":\"GET\""))
+	assert.True(t, strings.Contains(output, "\"path\":\"/users/42\""))
+	assert.True(t, strings.Contains(output, "\"status\":200"))
+	assert.True(t, strings.Contains(output, "\"route\":\"/users/{id}\""))
+}
+
+func TestServer_WithPrintRoutes_LogsOnRegistration(t *testing.T) {
+	var logs bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&logs, nil))
+	server := NewServer(
+		WithLogger(logger),
+		WithPrintRoutes(true),
+	)
+
+	err := Get(server, "/routes", func(ctx context.Context, input *struct{}) (*pingOutput, error) {
+		out := &pingOutput{}
+		out.Body.Message = "ok"
+		return out, nil
+	})
+	assert.NoError(t, err)
+
+	output := logs.String()
+	assert.Contains(t, output, "Registered routes")
+	assert.Contains(t, output, "GET /routes")
+}
+
+func TestServer_WithLogger_PropagatesToAdapter(t *testing.T) {
+	var logs bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&logs, nil))
+	stdAdapter := adapterstd.New()
+	server := NewServer(
+		WithLogger(logger),
+		WithAdapter(stdAdapter),
+	)
+
+	stdAdapter.Handle(http.MethodGet, "/native", func(ctx context.Context, w http.ResponseWriter, r *http.Request) error {
+		return errors.New("native boom")
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/native", nil)
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusInternalServerError, rec.Code)
+	assert.Contains(t, logs.String(), "native boom")
 }

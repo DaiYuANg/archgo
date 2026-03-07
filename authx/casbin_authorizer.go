@@ -11,74 +11,81 @@ import (
 	"github.com/samber/lo"
 )
 
-const defaultCasbinModel = `
-[request_definition]
-r = sub, obj, act
+// CasbinModelType defines the type of Casbin model to use.
+type CasbinModelType string
 
-[policy_definition]
-p = sub, obj, act, eft
-
-[role_definition]
-g = _, _
-
-[policy_effect]
-e = some(where (p.eft == allow)) && !some(where (p.eft == deny))
-
-[matchers]
-m = (r.sub == p.sub || g(r.sub, p.sub)) && r.obj == p.obj && r.act == p.act
-`
-
-// PermissionRule is an AuthX-owned authorization policy rule.
-type PermissionRule struct {
-	Subject  string
-	Resource string
-	Action   string
-	Allowed  bool
-}
-
-// RoleBinding links a subject to a role.
-type RoleBinding struct {
-	Subject string
-	Role    string
-}
-
-// AllowPermission creates an allow policy rule.
-func AllowPermission(subject, resource, action string) PermissionRule {
-	return PermissionRule{
-		Subject:  subject,
-		Resource: resource,
-		Action:   action,
-		Allowed:  true,
-	}
-}
-
-// DenyPermission creates a deny policy rule.
-func DenyPermission(subject, resource, action string) PermissionRule {
-	return PermissionRule{
-		Subject:  subject,
-		Resource: resource,
-		Action:   action,
-		Allowed:  false,
-	}
-}
-
-// NewRoleBinding creates a role binding.
-func NewRoleBinding(subject, role string) RoleBinding {
-	return RoleBinding{
-		Subject: subject,
-		Role:    role,
-	}
-}
+const (
+	// CasbinModelExact uses exact matching for resources.
+	CasbinModelExact CasbinModelType = "exact"
+	// CasbinModelPrefix uses prefix matching (e.g., /api/admin/*).
+	CasbinModelPrefix CasbinModelType = "prefix"
+	// CasbinModelGlob uses glob pattern matching (e.g., /api/users/*/orders/*).
+	CasbinModelGlob CasbinModelType = "glob"
+	// CasbinModelKeyMatch uses Casbin's keyMatch (e.g., /api/:resource).
+	CasbinModelKeyMatch CasbinModelType = "key_match"
+	// CasbinModelKeyMatch2 uses Casbin's keyMatch2 with regex support.
+	CasbinModelKeyMatch2 CasbinModelType = "key_match2"
+)
 
 // CasbinAuthorizer authorizes requests with internal casbin engine.
 type CasbinAuthorizer struct {
-	enforcer *casbin.Enforcer
-	logger   *slog.Logger
+	enforcer  *casbin.Enforcer
+	modelType CasbinModelType
+	logger    *slog.Logger
 }
 
-// NewCasbinAuthorizer creates a casbin authorizer with AuthX default model.
-func NewCasbinAuthorizer() (*CasbinAuthorizer, error) {
-	m, err := model.NewModelFromString(defaultCasbinModel)
+// CasbinAuthorizerOption configures a CasbinAuthorizer.
+type CasbinAuthorizerOption func(*casbinAuthorizerConfig)
+
+type casbinAuthorizerConfig struct {
+	modelType   CasbinModelType
+	customModel string
+	logger      *slog.Logger
+}
+
+// WithCasbinModelType sets the Casbin model type.
+func WithCasbinModelType(modelType CasbinModelType) CasbinAuthorizerOption {
+	return func(cfg *casbinAuthorizerConfig) {
+		cfg.modelType = modelType
+	}
+}
+
+// WithCasbinCustomModel sets a custom Casbin model string.
+func WithCasbinCustomModel(model string) CasbinAuthorizerOption {
+	return func(cfg *casbinAuthorizerConfig) {
+		cfg.customModel = model
+	}
+}
+
+// WithCasbinLogger sets the logger for the authorizer.
+func WithCasbinLogger(logger *slog.Logger) CasbinAuthorizerOption {
+	return func(cfg *casbinAuthorizerConfig) {
+		cfg.logger = logger
+	}
+}
+
+// NewCasbinAuthorizer creates a casbin authorizer with configurable model.
+func NewCasbinAuthorizer(opts ...CasbinAuthorizerOption) (*CasbinAuthorizer, error) {
+	cfg := casbinAuthorizerConfig{
+		modelType: CasbinModelExact,
+		logger:    normalizeLogger(nil).With("component", "authx.authorizer", "name", "casbin"),
+	}
+
+	for _, opt := range opts {
+		if opt != nil {
+			opt(&cfg)
+		}
+	}
+
+	var m model.Model
+	var err error
+
+	if cfg.customModel != "" {
+		m, err = model.NewModelFromString(cfg.customModel)
+	} else {
+		m, err = model.NewModelFromString(buildCasbinModel(cfg.modelType))
+	}
+
 	if err != nil {
 		return nil, fmt.Errorf("%w: build casbin model: %v", ErrInvalidAuthorizer, err)
 	}
@@ -89,8 +96,9 @@ func NewCasbinAuthorizer() (*CasbinAuthorizer, error) {
 	}
 
 	return &CasbinAuthorizer{
-		enforcer: enforcer,
-		logger:   normalizeLogger(nil).With("component", "authx.authorizer", "name", "casbin"),
+		enforcer:  enforcer,
+		modelType: cfg.modelType,
+		logger:    cfg.logger,
 	}, nil
 }
 
@@ -99,7 +107,7 @@ func (a *CasbinAuthorizer) SetLogger(logger *slog.Logger) {
 	if a == nil {
 		return
 	}
-	a.logger = normalizeLogger(logger).With("component", "authx.authorizer", "name", "casbin")
+	a.logger = normalizeLogger(logger).With("component", "authx.authorizer", "name", "casbin", "model", a.modelType)
 }
 
 // LoadPermissions loads AuthX permission rules into authorization engine.
@@ -111,7 +119,7 @@ func (a *CasbinAuthorizer) LoadPermissions(ctx context.Context, rules ...Permiss
 	if len(rules) == 0 {
 		return nil
 	}
-	a.logger.Debug("load permissions started", "rules", len(rules))
+	a.logger.Debug("load permissions started", "rules", len(rules), "model", a.modelType)
 
 	policies := make([][]string, 0, len(rules))
 	for _, rule := range rules {
@@ -128,7 +136,7 @@ func (a *CasbinAuthorizer) LoadPermissions(ctx context.Context, rules ...Permiss
 		a.logger.Error("load permissions failed", "error", err.Error())
 		return err
 	}
-	a.logger.Info("load permissions succeeded", "rules", len(policies))
+	a.logger.Info("load permissions succeeded", "rules", len(policies), "model", a.modelType)
 	return nil
 }
 
@@ -197,13 +205,113 @@ func (a *CasbinAuthorizer) Authorize(ctx context.Context, identity Identity, req
 		a.logger.Error("enforce failed", "subject", subject, "action", request.Action, "resource", request.Resource, "error", err.Error())
 		return Decision{}, err
 	}
-	a.logger.Debug("enforce finished", "subject", subject, "action", request.Action, "resource", request.Resource, "allowed", allowed)
+	a.logger.Debug("enforce finished", "subject", subject, "action", request.Action, "resource", request.Resource, "allowed", allowed, "model", a.modelType)
 
 	return lo.Ternary(
 		allowed,
 		Allow("allowed by loaded policy"),
 		Deny("denied by loaded policy"),
 	), nil
+}
+
+// ModelType returns the current Casbin model type.
+func (a *CasbinAuthorizer) ModelType() CasbinModelType {
+	if a == nil {
+		return CasbinModelExact
+	}
+	return a.modelType
+}
+
+// buildCasbinModel returns the Casbin model string for the specified type.
+func buildCasbinModel(modelType CasbinModelType) string {
+	switch modelType {
+	case CasbinModelPrefix:
+		return `
+[request_definition]
+r = sub, obj, act
+
+[policy_definition]
+p = sub, obj, act, eft
+
+[role_definition]
+g = _, _
+
+[policy_effect]
+e = some(where (p.eft == allow)) && !some(where (p.eft == deny))
+
+[matchers]
+m = (r.sub == p.sub || g(r.sub, p.sub)) && keyMatch(r.obj, p.obj) && r.act == p.act
+`
+	case CasbinModelGlob:
+		return `
+[request_definition]
+r = sub, obj, act
+
+[policy_definition]
+p = sub, obj, act, eft
+
+[role_definition]
+g = _, _
+
+[policy_effect]
+e = some(where (p.eft == allow)) && !some(where (p.eft == deny))
+
+[matchers]
+m = (r.sub == p.sub || g(r.sub, p.sub)) && globMatch(r.obj, p.obj) && r.act == p.act
+`
+	case CasbinModelKeyMatch:
+		return `
+[request_definition]
+r = sub, obj, act
+
+[policy_definition]
+p = sub, obj, act, eft
+
+[role_definition]
+g = _, _
+
+[policy_effect]
+e = some(where (p.eft == allow)) && !some(where (p.eft == deny))
+
+[matchers]
+m = (r.sub == p.sub || g(r.sub, p.sub)) && keyMatch(r.obj, p.obj) && r.act == p.act
+`
+	case CasbinModelKeyMatch2:
+		return `
+[request_definition]
+r = sub, obj, act
+
+[policy_definition]
+p = sub, obj, act, eft
+
+[role_definition]
+g = _, _
+
+[policy_effect]
+e = some(where (p.eft == allow)) && !some(where (p.eft == deny))
+
+[matchers]
+m = (r.sub == p.sub || g(r.sub, p.sub)) && keyMatch2(r.obj, p.obj) && r.act == p.act
+`
+	default:
+		// Exact match (default)
+		return `
+[request_definition]
+r = sub, obj, act
+
+[policy_definition]
+p = sub, obj, act, eft
+
+[role_definition]
+g = _, _
+
+[policy_effect]
+e = some(where (p.eft == allow)) && !some(where (p.eft == deny))
+
+[matchers]
+m = (r.sub == p.sub || g(r.sub, p.sub)) && r.obj == p.obj && r.act == p.act
+`
+	}
 }
 
 func normalizePermissionRule(rule PermissionRule) PermissionRule {

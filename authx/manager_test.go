@@ -13,6 +13,14 @@ type staticPolicySource struct {
 	snapshot PolicySnapshot
 }
 
+func (s staticPolicySource) LoadPolicies(ctx context.Context) (PolicySnapshot, error) {
+	return s.snapshot, nil
+}
+
+func (s staticPolicySource) Name() string {
+	return "static-test"
+}
+
 type unauthorizedProvider struct{}
 
 func (unauthorizedProvider) LoadByPrincipal(ctx context.Context, principal string) (UserDetails, error) {
@@ -52,11 +60,6 @@ func (p testDBMappedProvider) MapToUserDetails(ctx context.Context, principal st
 		PasswordHash: payload.password,
 		Name:         payload.name,
 	}, nil
-}
-
-func (s staticPolicySource) LoadPolicies(ctx context.Context) (PolicySnapshot, error) {
-	_ = ctx
-	return s.snapshot.clone(), nil
 }
 
 func newTestProvider(t *testing.T) IdentityProvider {

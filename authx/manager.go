@@ -17,11 +17,13 @@ type IdentityProvider interface {
 
 // Manager is the high-level facade for authentication and authorization.
 type Manager struct {
-	flow          *AuthFlow
-	userProviders *identityProviderChain
-	policySources *policySourceChain
-	logger        *slog.Logger
-	obs           observability.Observability
+	flow           *AuthFlow
+	userProviders  *identityProviderChain
+	policySources  *PolicySourceChain
+	logger         *slog.Logger
+	obs            observability.Observability
+	diagnostics    *DiagnosticsTracker
+	eventPublisher *EventPublisher
 
 	authorizer    atomic.Pointer[CasbinAuthorizer]
 	policyVersion atomic.Int64
@@ -66,7 +68,9 @@ func NewManager(opts ...ManagerOption) (*Manager, error) {
 		cfg.providers = []IdentityProvider{NewInMemoryIdentityProvider()}
 	}
 	if len(cfg.sources) == 0 {
-		cfg.sources = []PolicySource{NewInMemoryPolicySource(PolicySnapshot{})}
+		cfg.sources = []PolicySource{NewMemoryPolicySource(MemoryPolicySourceConfig{
+			Name: "default-memory",
+		})}
 	}
 
 	obs := observability.Normalize(cfg.observability, cfg.logger)
@@ -89,10 +93,10 @@ func NewManager(opts ...ManagerOption) (*Manager, error) {
 		return nil, err
 	}
 
-	policySources, err := newPolicySourceChain(cfg.sources...)
-	if err != nil {
-		return nil, err
-	}
+	policySources := NewPolicySourceChain(PolicySourceChainConfig{
+		Sources: cfg.sources,
+		Name:    "manager-policy-chain",
+	})
 	policySources.SetLogger(logger.With("node", "policy-source-chain"))
 
 	authorizer, err := NewCasbinAuthorizer()
@@ -102,11 +106,25 @@ func NewManager(opts ...ManagerOption) (*Manager, error) {
 	authorizer.SetLogger(logger.With("node", "authorizer"))
 
 	manager := &Manager{
-		flow:          flow,
-		userProviders: userProviders,
-		policySources: policySources,
-		logger:        logger,
-		obs:           obs,
+		flow:           flow,
+		userProviders:  userProviders,
+		policySources:  policySources,
+		logger:         logger,
+		obs:            obs,
+		diagnostics:    NewDiagnosticsTracker(),
+		eventPublisher: cfg.eventPublisher,
+	}
+
+	// Create default event publisher if not provided
+	if manager.eventPublisher == nil {
+		var publisherOpts []EventPublisherOption
+		if cfg.logger != nil {
+			publisherOpts = append(publisherOpts, WithEventPublisherLogger(cfg.logger))
+		}
+		if cfg.observability != nil {
+			publisherOpts = append(publisherOpts, WithEventPublisherObservability(cfg.observability))
+		}
+		manager.eventPublisher = NewEventPublisher(publisherOpts...)
 	}
 	manager.authorizer.Store(authorizer)
 	logger.Info("manager initialized", "providers", len(cfg.providers), "sources", len(cfg.sources))
@@ -260,9 +278,17 @@ func (m *Manager) SetPolicySources(sources ...PolicySource) error {
 		return fmt.Errorf("%w: manager is not configured", ErrInvalidPolicy)
 	}
 	logger := m.loggerSafe()
-	if err := m.policySources.Set(sources...); err != nil {
-		return err
+
+	// Clear existing sources and add new ones
+	m.policySources.mu.Lock()
+	m.policySources.sources = make([]PolicySource, 0, len(sources))
+	for _, src := range sources {
+		if src != nil {
+			m.policySources.sources = append(m.policySources.sources, src)
+		}
 	}
+	m.policySources.mu.Unlock()
+
 	logger.Info("policy sources replaced", "sources", len(sources))
 	return nil
 }
@@ -273,9 +299,7 @@ func (m *Manager) AddPolicySource(source PolicySource) error {
 		return fmt.Errorf("%w: manager is not configured", ErrInvalidPolicy)
 	}
 	logger := m.loggerSafe()
-	if err := m.policySources.Add(source); err != nil {
-		return err
-	}
+	m.policySources.AddSource(source)
 	logger.Info("policy source added")
 	return nil
 }
@@ -304,7 +328,7 @@ func (m *Manager) LoadPolicies(ctx context.Context) (int64, error) {
 
 	logger := m.loggerSafe()
 
-	sources := m.policySources.All()
+	sources := m.policySources.Sources()
 	if len(sources) == 0 {
 		result = "error"
 		emptySourcesErr := fmt.Errorf("%w: policy sources are empty", ErrInvalidPolicy)
@@ -408,18 +432,24 @@ func (m *Manager) ReplacePolicies(ctx context.Context, snapshot PolicySnapshot) 
 	if err := nextAuthorizer.LoadPermissions(ctx, copiedSnapshot.Permissions...); err != nil {
 		result = "error"
 		span.RecordError(err)
+		m.diagnostics.RecordReloadFailure(err)
 		logger.Error("replace policies failed: load permissions", "error", err.Error())
 		return 0, err
 	}
 	if err := nextAuthorizer.LoadRoleBindings(ctx, copiedSnapshot.RoleBindings...); err != nil {
 		result = "error"
 		span.RecordError(err)
+		m.diagnostics.RecordReloadFailure(err)
 		logger.Error("replace policies failed: load role bindings", "error", err.Error())
 		return 0, err
 	}
 
 	m.authorizer.Store(nextAuthorizer)
 	version := m.policyVersion.Add(1)
+
+	// Record diagnostics
+	m.diagnostics.RecordReloadSuccess(version, len(copiedSnapshot.Permissions), len(copiedSnapshot.RoleBindings))
+
 	logger.Info("replace policies succeeded", "version", version)
 	return version, nil
 }
@@ -430,4 +460,13 @@ func (m *Manager) PolicyVersion() int64 {
 		return 0
 	}
 	return m.policyVersion.Load()
+}
+
+// EventPublisher returns the event publisher for publishing authx events.
+// The returned publisher can be used to subscribe to events or publish custom events.
+func (m *Manager) EventPublisher() *EventPublisher {
+	if m == nil {
+		return nil
+	}
+	return m.eventPublisher
 }

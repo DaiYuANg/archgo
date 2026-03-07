@@ -31,12 +31,12 @@ func main() {
 		panic(err)
 	}
 
-	source := authx.NewInMemoryPolicySource(authx.NewPolicySnapshot(
-		[]authx.PermissionRule{
+	source := authx.NewMemoryPolicySource(authx.MemoryPolicySourceConfig{
+		Name: "observability-policy-source",
+		InitialPermissions: []authx.PermissionRule{
 			authx.AllowPermission("u-1", "order:1001", "read"),
 		},
-		nil,
-	))
+	})
 
 	logger, err := logx.New(logx.WithConsole(true), logx.WithDebugLevel())
 	if err != nil {

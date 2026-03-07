@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"log"
 	"net/http"
 
 	"github.com/DaiYuANg/arcgo/httpx"
@@ -10,6 +11,7 @@ import (
 	"github.com/DaiYuANg/arcgo/httpx/adapter/std"
 	"github.com/DaiYuANg/arcgo/httpx/middleware"
 	"github.com/DaiYuANg/arcgo/logx"
+	"github.com/DaiYuANg/arcgo/pkg/randomport"
 	"github.com/danielgtaylor/huma/v2"
 )
 
@@ -30,7 +32,9 @@ func main() {
 		Title:       "ArcGo Monitoring API",
 		Version:     "1.0.0",
 		Description: "Monitoring API",
-	})
+		DocsPath:    "/docs",
+		OpenAPIPath: "/openapi.json",
+	}).WithLogger(logx.NewSlog(logger))
 
 	server := httpx.NewServer(
 		httpx.WithAdapter(stdAdapter),
@@ -44,7 +48,6 @@ func main() {
 		return out, nil
 	}, huma.OperationTags("monitoring"))
 
-	monitored := middleware.PrometheusMiddleware(middleware.OpenTelemetryMiddleware(server.Handler()))
 	server.Adapter().Handle(httpx.MethodGet, "/metrics", func(
 		ctx context.Context,
 		w http.ResponseWriter,
@@ -55,6 +58,17 @@ func main() {
 		return nil
 	})
 
-	fmt.Println("Monitoring server starting on :8080")
-	http.ListenAndServe(":8080", monitored)
+	_ = middleware.PrometheusMiddleware(middleware.OpenTelemetryMiddleware(server.Handler()))
+
+	port := randomport.MustFind()
+	addr := fmt.Sprintf(":%d", port)
+	fmt.Printf("Monitoring server starting on %s\n", addr)
+	fmt.Printf("Health:     http://localhost%s/health\n", addr)
+	fmt.Printf("Metrics:    http://localhost%s/metrics\n", addr)
+	fmt.Printf("OpenAPI:    http://localhost%s/openapi.json\n", addr)
+	fmt.Printf("Docs:       http://localhost%s/docs\n", addr)
+
+	if err := server.ListenAndServe(addr); err != nil {
+		log.Fatalf("Failed to start server: %v", err)
+	}
 }

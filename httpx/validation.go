@@ -9,6 +9,7 @@ import (
 	"github.com/samber/lo"
 )
 
+// validateInput validates a typed input value when a validator is configured.
 func (s *Server) validateInput(input any) error {
 	if s == nil || s.validator == nil || input == nil {
 		return nil
@@ -29,6 +30,7 @@ func (s *Server) validateInput(input any) error {
 	return s.validator.Struct(input)
 }
 
+// validationErrorMessage converts validator errors into a concise HTTP-facing message.
 func validationErrorMessage(err error) string {
 	var validationErrs validator.ValidationErrors
 	if !errors.As(err, &validationErrs) {

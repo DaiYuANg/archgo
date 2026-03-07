@@ -3,12 +3,14 @@ package main
 import (
 	"context"
 	"fmt"
+	"log"
 	"time"
 
 	"github.com/DaiYuANg/arcgo/httpx"
 	"github.com/DaiYuANg/arcgo/httpx/adapter/std"
 	"github.com/DaiYuANg/arcgo/httpx/options"
 	"github.com/DaiYuANg/arcgo/logx"
+	"github.com/DaiYuANg/arcgo/pkg/randomport"
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/go-chi/chi/v5/middleware"
 )
@@ -24,7 +26,7 @@ func main() {
 	defer func() { _ = logger.Close() }()
 	slogLogger := logx.NewSlog(logger)
 
-	fmt.Println("=== Example 1: Using ServerOptions ===")
+	fmt.Println("=== Example 1: Using ServerOptions + adapter construction options ===")
 	serverOpts := options.DefaultServerOptions()
 	serverOpts.Logger = slogLogger
 	serverOpts.BasePath = "/api"
@@ -34,11 +36,22 @@ func main() {
 	serverOpts.HumaTitle = "ArcGo API"
 	serverOpts.HumaVersion = "1.0.0"
 	serverOpts.HumaDescription = "API Documentation"
-	serverOpts.ReadTimeout = 15 * time.Second
-	serverOpts.WriteTimeout = 15 * time.Second
-	serverOpts.IdleTimeout = 60 * time.Second
+	serverOpts.DocsPath = "/docs"
+	serverOpts.OpenAPIPath = "/openapi.json"
+	serverOpts.EnablePanicRecover = true
+	serverOpts.EnableAccessLog = true
 
-	stdAdapter := std.New().WithLogger(slogLogger)
+	// httpx server logs and adapter bridge logs are configured separately.
+	stdAdapter := std.NewWithOptions(std.Options{
+		Logger: slogLogger,
+		Server: std.ServerOptions{
+			ReadTimeout:     15 * time.Second,
+			WriteTimeout:    15 * time.Second,
+			IdleTimeout:     60 * time.Second,
+			ShutdownTimeout: 5 * time.Second,
+			MaxHeaderBytes:  1 << 20,
+		},
+	})
 	stdAdapter.Router().Use(middleware.Logger, middleware.Recoverer, middleware.RequestID)
 
 	server := httpx.NewServer(append(serverOpts.Build(), httpx.WithAdapter(stdAdapter))...)
@@ -54,13 +67,21 @@ func main() {
 	fmt.Printf("HTTP Client Timeout: %v\n", client.Timeout)
 
 	fmt.Println("=== Example 3: Using Context Options ===")
-	ctxOpts := &options.ContextOptions{Timeout: 5 * time.Second, CancelOnPanic: true}
+	ctxOpts := &options.ContextOptions{Timeout: 5 * time.Second}
 	ctxOpts = options.WithContextValueOpt(ctxOpts, "request_id", "12345")
 	ctx, cancel := ctxOpts.Build()
 	defer cancel()
 	fmt.Printf("Context value request_id: %v\n", ctx.Value("request_id"))
 
-	fmt.Println("All examples complete. Use server.ListenAndServe() to start server.")
-
+	port := randomport.MustFind()
+	addr := fmt.Sprintf(":%d", port)
+	fmt.Printf("Config example server running on %s\n", addr)
+	fmt.Printf("GET  /api/users\n")
+	fmt.Printf("OpenAPI: http://localhost%s/openapi.json\n", addr)
+	fmt.Printf("Docs:    http://localhost%s/docs\n", addr)
 	fmt.Println(server.GetRoutes())
+
+	if err := server.ListenAndServe(addr); err != nil {
+		log.Fatalf("Failed to start server: %v", err)
+	}
 }

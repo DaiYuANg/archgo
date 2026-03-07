@@ -6,7 +6,7 @@ import (
 	"github.com/samber/mo"
 )
 
-// Note.
+// Common package-level errors returned by registration and adapter helpers.
 var (
 	ErrAdapterNotFound    = errors.New("httpx: adapter not found")
 	ErrInvalidEndpoint    = errors.New("httpx: invalid endpoint struct")
@@ -15,13 +15,14 @@ var (
 	ErrRouteNotRegistered = errors.New("httpx: route not registered")
 )
 
-// Error documents related behavior.
+// Error wraps an HTTP status code, message, and optional underlying cause.
 type Error struct {
 	Code    int
 	Message string
 	Err     error
 }
 
+// Error returns the formatted error message.
 func (e *Error) Error() string {
 	if e.Err != nil {
 		return e.Message + ": " + e.Err.Error()
@@ -29,11 +30,12 @@ func (e *Error) Error() string {
 	return e.Message
 }
 
+// Unwrap returns the underlying cause, if any.
 func (e *Error) Unwrap() error {
 	return e.Err
 }
 
-// NewError creates related functionality.
+// NewError constructs an `httpx.Error` with an optional wrapped error.
 func NewError(code int, message string, err ...error) *Error {
 	e := &Error{
 		Code:    code,
@@ -45,7 +47,7 @@ func NewError(code int, message string, err ...error) *Error {
 	return e
 }
 
-// ToOption converts related values.
+// ToOption converts the error into an optional error value.
 func (e *Error) ToOption() mo.Option[error] {
 	if e == nil {
 		return mo.None[error]()
@@ -53,17 +55,17 @@ func (e *Error) ToOption() mo.Option[error] {
 	return mo.Some[error](e)
 }
 
-// IsAdapterNotFound checks related state.
+// IsAdapterNotFound reports whether the error wraps `ErrAdapterNotFound`.
 func IsAdapterNotFound(err error) bool {
 	return errors.Is(err, ErrAdapterNotFound)
 }
 
-// IsInvalidEndpoint checks related state.
+// IsInvalidEndpoint reports whether the error wraps `ErrInvalidEndpoint`.
 func IsInvalidEndpoint(err error) bool {
 	return errors.Is(err, ErrInvalidEndpoint)
 }
 
-// IsInvalidHandlerSignature checks related state.
+// IsInvalidHandlerSignature reports whether the error wraps `ErrInvalidHandlerSig`.
 func IsInvalidHandlerSignature(err error) bool {
 	return errors.Is(err, ErrInvalidHandlerSig)
 }

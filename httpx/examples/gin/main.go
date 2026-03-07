@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"log"
 	"strings"
 	"sync"
 	"time"
@@ -12,6 +13,7 @@ import (
 	"github.com/DaiYuANg/arcgo/httpx/adapter"
 	"github.com/DaiYuANg/arcgo/httpx/adapter/gin"
 	"github.com/DaiYuANg/arcgo/logx"
+	"github.com/DaiYuANg/arcgo/pkg/randomport"
 	"github.com/danielgtaylor/huma/v2"
 	ginFramework "github.com/gin-gonic/gin"
 	"github.com/go-playground/validator/v10"
@@ -196,7 +198,9 @@ func main() {
 		Title:       "ArcGo Gin API",
 		Version:     "1.0.0",
 		Description: "Typed Gin API example",
-	})
+		DocsPath:    "/docs",
+		OpenAPIPath: "/openapi.json",
+	}).WithLogger(logx.NewSlog(logger))
 	ginAdapter.Router().Use(ginFramework.Logger(), ginFramework.Recovery())
 
 	server := httpx.NewServer(
@@ -275,15 +279,19 @@ func main() {
 		return out, nil
 	}, huma.OperationTags("users"))
 
-	fmt.Println("Gin example server running at :8080")
-	fmt.Println("GET  /health")
-	fmt.Println("GET  /api/v1/users?limit=10&page=1&q=alice")
-	fmt.Println("GET  /api/v1/users/{id}")
-	fmt.Println("POST /api/v1/users")
-	fmt.Println("PUT  /api/v1/users/{id}")
-	fmt.Println("DELETE /api/v1/users/{id}")
-	fmt.Println("OpenAPI: http://localhost:8080/openapi.json")
-	fmt.Println("Docs:    http://localhost:8080/docs")
+	port := randomport.MustFind()
+	addr := fmt.Sprintf(":%d", port)
+	fmt.Printf("Gin example server running on %s\n", addr)
+	fmt.Printf("GET  /health\n")
+	fmt.Printf("GET  /api/v1/users?limit=10&page=1&q=alice\n")
+	fmt.Printf("GET  /api/v1/users/{id}\n")
+	fmt.Printf("POST /api/v1/users\n")
+	fmt.Printf("PUT  /api/v1/users/{id}\n")
+	fmt.Printf("DELETE /api/v1/users/{id}\n")
+	fmt.Printf("OpenAPI: http://localhost%s/openapi.json\n", addr)
+	fmt.Printf("Docs:    http://localhost%s/docs\n", addr)
 
-	server.ListenAndServe(":8080")
+	if err := server.ListenAndServe(addr); err != nil {
+		log.Fatalf("Failed to start server: %v", err)
+	}
 }

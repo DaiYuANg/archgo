@@ -2,11 +2,13 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log"
 
 	"github.com/DaiYuANg/arcgo/httpx"
 	"github.com/DaiYuANg/arcgo/httpx/adapter"
 	"github.com/DaiYuANg/arcgo/httpx/adapter/std"
+	"github.com/DaiYuANg/arcgo/pkg/randomport"
 )
 
 type healthOutput struct {
@@ -46,6 +48,8 @@ func main() {
 		Title:       "httpx quickstart",
 		Version:     "1.0.0",
 		Description: "Typed HTTP quickstart example",
+		DocsPath:    "/docs",
+		OpenAPIPath: "/openapi.json",
 	})
 
 	server := httpx.NewServer(
@@ -78,5 +82,13 @@ func main() {
 		return out, nil
 	})
 
-	log.Fatal(server.ListenAndServe(":8080"))
+	port := randomport.MustFind()
+	addr := fmt.Sprintf(":%d", port)
+	fmt.Printf("Server starting on %s\n", addr)
+	fmt.Printf("OpenAPI JSON: http://localhost%s/openapi.json\n", addr)
+	fmt.Printf("Swagger UI:   http://localhost%s/docs\n", addr)
+
+	if err := server.ListenAndServe(addr); err != nil {
+		log.Fatalf("Failed to start server: %v", err)
+	}
 }

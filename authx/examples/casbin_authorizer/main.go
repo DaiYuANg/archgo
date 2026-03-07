@@ -25,12 +25,13 @@ func main() {
 		panic(err)
 	}
 
-	policySource := authx.NewInMemoryPolicySource(authx.NewPolicySnapshot(
-		[]authx.PermissionRule{
+	policySource := authx.NewMemoryPolicySource(authx.MemoryPolicySourceConfig{
+		Name: "casbin-policy",
+		InitialPermissions: []authx.PermissionRule{
 			authx.AllowPermission("u-1", "order:1001", "read"),
 		},
-		nil,
-	))
+		InitialRoleBindings: nil,
+	})
 
 	logger, err := logx.New(logx.WithConsole(true), logx.WithLevel(logx.DebugLevel))
 	if err != nil {
@@ -63,12 +64,12 @@ func main() {
 	}
 	fmt.Printf("before reload allowed=%v\n", allowed)
 
-	policySource.ReplaceSnapshot(authx.NewPolicySnapshot(
-		[]authx.PermissionRule{
+	policySource.UpdateSnapshot(authx.PolicySnapshot{
+		Permissions: []authx.PermissionRule{
 			authx.DenyPermission("u-1", "order:1001", "read"),
 		},
-		nil,
-	))
+		RoleBindings: nil,
+	})
 
 	version, err := manager.LoadPolicies(context.Background())
 	if err != nil {

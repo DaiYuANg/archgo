@@ -6,6 +6,7 @@ import (
 	"github.com/samber/lo"
 )
 
+// joinRoutePath combines a normalized base path and a route fragment.
 func joinRoutePath(basePath, path string) string {
 	base := normalizeRoutePrefix(basePath)
 
@@ -32,6 +33,7 @@ func joinRoutePath(basePath, path string) string {
 	return base + cleanPath
 }
 
+// normalizeRoutePrefix normalizes route prefixes to `\"/prefix\"` or empty.
 func normalizeRoutePrefix(prefix string) string {
 	clean := strings.Trim(strings.TrimSpace(prefix), "/")
 	return lo.Ternary(clean == "", "", "/"+clean)

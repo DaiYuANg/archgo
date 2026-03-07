@@ -12,10 +12,11 @@ import (
 type ManagerOption func(cfg *managerConfig) error
 
 type managerConfig struct {
-	providers     []IdentityProvider
-	sources       []PolicySource
-	logger        *slog.Logger
-	observability observability.Observability
+	providers      []IdentityProvider
+	sources        []PolicySource
+	logger         *slog.Logger
+	observability  observability.Observability
+	eventPublisher *EventPublisher
 }
 
 // WithProvider appends one authentication provider to provider chain.
@@ -126,4 +127,16 @@ func (p *mappedIdentityProvider[T]) LoadByPrincipal(ctx context.Context, princip
 	}
 	details.Payload = payload
 	return details, nil
+}
+
+// WithEventPublisher sets a custom event publisher for authx events.
+// If not provided, a default event publisher will be created.
+func WithEventPublisher(publisher *EventPublisher) ManagerOption {
+	return func(cfg *managerConfig) error {
+		if cfg == nil {
+			return fmt.Errorf("%w: manager config is nil", ErrInvalidAuthenticator)
+		}
+		cfg.eventPublisher = publisher
+		return nil
+	}
 }

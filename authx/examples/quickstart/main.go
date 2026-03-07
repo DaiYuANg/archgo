@@ -26,15 +26,16 @@ func main() {
 		panic(err)
 	}
 
-	policySource := authx.NewInMemoryPolicySource(authx.NewPolicySnapshot(
-		[]authx.PermissionRule{
+	policySource := authx.NewMemoryPolicySource(authx.MemoryPolicySourceConfig{
+		Name: "quickstart-policy",
+		InitialPermissions: []authx.PermissionRule{
 			authx.AllowPermission("u-1", "order:1001", "read"),
 			authx.AllowPermission("role:admin", "order:1001", "write"),
 		},
-		[]authx.RoleBinding{
+		InitialRoleBindings: []authx.RoleBinding{
 			authx.NewRoleBinding("u-1", "role:admin"),
 		},
-	))
+	})
 
 	logger, err := logx.New(logx.WithConsole(true), logx.WithLevel(logx.DebugLevel))
 	if err != nil {

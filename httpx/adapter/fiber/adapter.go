@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/DaiYuANg/arcgo/httpx/adapter"
 	"github.com/danielgtaylor/huma/v2"
@@ -21,79 +22,146 @@ import (
 	"github.com/samber/mo"
 )
 
-// Adapter documents related behavior.
-//
-// Note.
-// Note.
-// Note.
-// Note.
+// Adapter implements the fiber runtime bridge for httpx.
 type Adapter struct {
 	app    *fiber.App
 	group  fiber.Router
 	logger *slog.Logger
 	huma   huma.API
+	docs   *adapter.DocsController
+	opts   AppOptions
 }
 
-// New creates related functionality.
+// New constructs a fiber adapter backed by a fiber app and Huma API.
 func New(app *fiber.App, opts ...adapter.HumaOptions) *Adapter {
+	options := DefaultOptions()
+	options.Huma = adapter.MergeHumaOptions(opts...)
+	return NewWithOptions(app, options)
+}
+
+// AppOptions configures the fiber app created by the adapter when no app is supplied.
+type AppOptions struct {
+	ReadTimeout     time.Duration
+	WriteTimeout    time.Duration
+	IdleTimeout     time.Duration
+	ShutdownTimeout time.Duration
+}
+
+// DefaultAppOptions returns the default fiber adapter app config.
+func DefaultAppOptions() AppOptions {
+	return AppOptions{
+		ReadTimeout:     15 * time.Second,
+		WriteTimeout:    15 * time.Second,
+		IdleTimeout:     60 * time.Second,
+		ShutdownTimeout: 5 * time.Second,
+	}
+}
+
+// Options configures fiber adapter construction.
+type Options struct {
+	Huma   adapter.HumaOptions
+	Logger *slog.Logger
+	App    AppOptions
+}
+
+// DefaultOptions returns the default fiber adapter config.
+func DefaultOptions() Options {
+	return Options{
+		Huma:   adapter.DefaultHumaOptions(),
+		Logger: slog.Default(),
+		App:    DefaultAppOptions(),
+	}
+}
+
+// NewWithOptions constructs a fiber adapter from explicit construction-time options.
+// App timeout settings only apply when the adapter creates the fiber app itself.
+func NewWithOptions(app *fiber.App, opts Options) *Adapter {
 	var a *fiber.App
 	if app != nil {
 		a = app
 	} else {
-		a = fiber.New()
+		cfg := mergeAppOptions(opts.App)
+		a = fiber.New(fiber.Config{
+			ReadTimeout:  cfg.ReadTimeout,
+			WriteTimeout: cfg.WriteTimeout,
+			IdleTimeout:  cfg.IdleTimeout,
+		})
 	}
 
-	humaOpts := adapter.MergeHumaOptions(opts...)
+	humaOpts := adapter.MergeHumaOptions(opts.Huma)
 	cfg := huma.DefaultConfig(humaOpts.Title, humaOpts.Version)
 	adapter.ApplyHumaConfig(&cfg, humaOpts)
+
+	docsCfg := cfg
+	docsCfg.DocsPath = ""
+	docsCfg.OpenAPIPath = ""
+	docsCfg.SchemasPath = ""
+	api := humafiber.New(a, docsCfg)
+	docs := adapter.NewDocsController(api, humaOpts)
+	a.Use(func(c *fiber.Ctx) error {
+		if docs.ServeHTTP(&responseWriter{ctx: c}, convertRequest(c)) {
+			return nil
+		}
+		return c.Next()
+	})
 
 	return &Adapter{
 		app:    a,
 		group:  a,
-		logger: slog.Default(),
-		huma:   humafiber.New(a, cfg),
+		logger: defaultLogger(opts.Logger),
+		huma:   api,
+		docs:   docs,
+		opts:   mergeAppOptions(opts.App),
 	}
 }
 
-// WithLogger configures related behavior.
+// WithLogger replaces the adapter logger.
 func (a *Adapter) WithLogger(logger *slog.Logger) *Adapter {
-	a.logger = logger
+	a.SetLogger(logger)
 	return a
 }
 
-// Name returns related data.
+// SetLogger replaces the adapter logger.
+func (a *Adapter) SetLogger(logger *slog.Logger) {
+	if a == nil || logger == nil {
+		return
+	}
+	a.logger = logger
+}
+
+// Name returns the adapter name.
 func (a *Adapter) Name() string {
 	return "fiber"
 }
 
-// Handle registers related handlers.
+// Handle registers a native handler on the current fiber router.
 func (a *Adapter) Handle(method, path string, handler adapter.HandlerFunc) {
 	a.group.Add(method, path, a.wrapHandler(handler))
 }
 
-// Group creates related functionality.
+// Group returns a child adapter scoped to a fiber group.
 func (a *Adapter) Group(prefix string) adapter.Adapter {
 	return &Adapter{
 		app:    a.app,
 		group:  a.group.Group(prefix),
 		logger: a.logger,
 		huma:   a.huma,
+		docs:   a.docs,
+		opts:   a.opts,
 	}
 }
 
-// ServeHTTP supports related behavior.
+// ServeHTTP reports that the fiber adapter is not exposed as a net/http handler.
 func (a *Adapter) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	http.Error(w, "fiber adapter does not support net/http ServeHTTP; use ListenAndServe", http.StatusNotImplemented)
 }
 
-// Router returns related data.
-// Note.
-// Note.
+// Router exposes the underlying fiber app.
 func (a *Adapter) Router() *fiber.App {
 	return a.app
 }
 
-// Listen documents related behavior.
+// Listen starts the fiber server.
 func (a *Adapter) Listen(addr string) error {
 	if err := a.app.Listen(addr); err != nil {
 		return fmt.Errorf("httpx/fiber: listen on %q: %w", addr, err)
@@ -101,7 +169,7 @@ func (a *Adapter) Listen(addr string) error {
 	return nil
 }
 
-// Shutdown documents related behavior.
+// Shutdown stops the fiber server.
 func (a *Adapter) Shutdown() error {
 	if err := a.app.Shutdown(); err != nil {
 		return fmt.Errorf("httpx/fiber: shutdown: %w", err)
@@ -123,7 +191,7 @@ func (a *Adapter) ListenContext(ctx context.Context, addr string) error {
 		}
 		return fmt.Errorf("httpx/fiber: listen on %q: %w", addr, err)
 	case <-ctx.Done():
-		shutdownErr := a.Shutdown()
+		shutdownErr := a.shutdown()
 		listenErr := <-errCh
 		if shutdownErr != nil {
 			return fmt.Errorf("httpx/fiber: shutdown on %q: %w", addr, shutdownErr)
@@ -135,7 +203,17 @@ func (a *Adapter) ListenContext(ctx context.Context, addr string) error {
 	}
 }
 
-// wrapHandler wraps related logic.
+func (a *Adapter) shutdown() error {
+	if a.opts.ShutdownTimeout > 0 {
+		if err := a.app.ShutdownWithTimeout(a.opts.ShutdownTimeout); err != nil {
+			return fmt.Errorf("httpx/fiber: shutdown: %w", err)
+		}
+		return nil
+	}
+	return a.Shutdown()
+}
+
+// wrapHandler adapts an httpx handler to a fiber handler.
 func (a *Adapter) wrapHandler(handler adapter.HandlerFunc) fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		w := &responseWriter{ctx: c}
@@ -153,7 +231,7 @@ func (a *Adapter) wrapHandler(handler adapter.HandlerFunc) fiber.Handler {
 	}
 }
 
-// convertRequest converts related values.
+// convertRequest converts a fiber request into an `*http.Request`.
 func convertRequest(c *fiber.Ctx) *http.Request {
 	u := &url.URL{
 		Path:     c.Path(),
@@ -178,7 +256,7 @@ func convertRequest(c *fiber.Ctx) *http.Request {
 	return req.WithContext(adapter.WithRouteParams(userContext(c), c.AllParams()))
 }
 
-// responseWriter documents related behavior.
+// responseWriter adapts a fiber response to the `http.ResponseWriter` shape.
 type responseWriter struct {
 	ctx        *fiber.Ctx
 	statusCode int
@@ -207,9 +285,17 @@ func (w *responseWriter) WriteHeader(statusCode int) {
 	w.applyHeaders()
 }
 
-// HumaAPI returns related data.
+// HumaAPI exposes the underlying Huma API.
 func (a *Adapter) HumaAPI() huma.API {
 	return a.huma
+}
+
+// ConfigureHumaOptions updates adapter-managed docs/openapi routing.
+func (a *Adapter) ConfigureHumaOptions(opts adapter.HumaOptions) {
+	if a == nil || a.docs == nil {
+		return
+	}
+	a.docs.Configure(opts)
 }
 
 func (w *responseWriter) applyHeaders() {
@@ -243,4 +329,28 @@ func isExpectedFiberClose(err error) bool {
 	lower := strings.ToLower(err.Error())
 	return strings.Contains(lower, "server is not running") ||
 		strings.Contains(lower, "use of closed network connection")
+}
+
+func defaultLogger(logger *slog.Logger) *slog.Logger {
+	if logger != nil {
+		return logger
+	}
+	return slog.Default()
+}
+
+func mergeAppOptions(opts AppOptions) AppOptions {
+	defaults := DefaultAppOptions()
+	if opts.ReadTimeout > 0 {
+		defaults.ReadTimeout = opts.ReadTimeout
+	}
+	if opts.WriteTimeout > 0 {
+		defaults.WriteTimeout = opts.WriteTimeout
+	}
+	if opts.IdleTimeout > 0 {
+		defaults.IdleTimeout = opts.IdleTimeout
+	}
+	if opts.ShutdownTimeout > 0 {
+		defaults.ShutdownTimeout = opts.ShutdownTimeout
+	}
+	return defaults
 }

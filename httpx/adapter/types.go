@@ -3,6 +3,7 @@ package adapter
 
 import (
 	"context"
+	"log/slog"
 	"net/http"
 	"strings"
 
@@ -10,65 +11,70 @@ import (
 	"github.com/samber/lo"
 )
 
-// HandlerFunc documents related behavior.
+// HandlerFunc is the adapter-level handler signature used by native adapters.
 type HandlerFunc func(ctx context.Context, w http.ResponseWriter, r *http.Request) error
 
-// MiddlewareFunc documents related behavior.
+// MiddlewareFunc is the adapter-level middleware signature.
 type MiddlewareFunc func(next HandlerFunc) HandlerFunc
 
 type routeParamsCtxKey struct{}
 
-// Adapter documents related behavior.
-// Note.
-// Note.
-// Note.
-// Note.
+// Adapter is the runtime abstraction implemented by framework adapters.
 type Adapter interface {
-	// Name returns related data.
+	// Name returns the adapter name, such as `std`, `gin`, or `echo`.
 	Name() string
 
-	// Handle registers related handlers.
+	// Handle registers a native handler on the underlying runtime.
 	Handle(method, path string, handler HandlerFunc)
 
-	// Group creates related functionality.
+	// Group returns a child adapter scoped to the given prefix.
 	Group(prefix string) Adapter
 
-	// ServeHTTP documents related behavior.
+	// ServeHTTP serves requests for adapters that support `net/http`.
 	ServeHTTP(w http.ResponseWriter, r *http.Request)
 
-	// HumaAPI returns related data.
+	// HumaAPI exposes the underlying Huma API.
 	HumaAPI() huma.API
 }
 
-// RouterAdapter exposes router objects with strong typing.
+// RouterAdapter exposes the underlying router/engine/app with strong typing.
 type RouterAdapter[R any] interface {
 	Adapter
 	Router() R
 }
 
-// ListenableAdapter starts related services.
+// ListenableAdapter is implemented by adapters that can listen directly.
 type ListenableAdapter interface {
 	Listen(addr string) error
 }
 
-// ContextListenableAdapter starts related services.
+// ContextListenableAdapter is implemented by adapters that support context-aware shutdown.
 type ContextListenableAdapter interface {
 	ListenContext(ctx context.Context, addr string) error
 }
 
-// HumaOptions documents related behavior.
+// LoggerConfigurer is implemented by adapters that accept an injected slog logger.
+type LoggerConfigurer interface {
+	SetLogger(*slog.Logger)
+}
+
+// HumaOptions configures Huma-backed metadata and docs exposure for an adapter.
 type HumaOptions struct {
-	// Title documents related behavior.
+	// Title sets the OpenAPI info title.
 	Title string
-	// Version documents related behavior.
+	// Version sets the OpenAPI info version.
 	Version string
-	// Description documents related behavior.
+	// Description sets the OpenAPI info description.
 	Description string
-	// DocsPath provides default behavior.
+	// DocsPath sets the docs UI route.
 	DocsPath string
-	// OpenAPIPath provides default behavior.
+	// OpenAPIPath sets the OpenAPI spec route prefix, without extension.
 	OpenAPIPath string
-	// DisableDocsRoutes closes related resources.
+	// SchemasPath sets the schema route prefix.
+	SchemasPath string
+	// DocsRenderer selects the built-in docs renderer.
+	DocsRenderer string
+	// DisableDocsRoutes disables docs, OpenAPI, and schema routes.
 	DisableDocsRoutes bool
 }
 
@@ -80,6 +86,7 @@ func DefaultHumaOptions() HumaOptions {
 		Description: "API Documentation",
 		DocsPath:    "/docs",
 		OpenAPIPath: "/openapi",
+		SchemasPath: "/schemas",
 	}
 }
 
@@ -93,12 +100,14 @@ func MergeHumaOptions(opts ...HumaOptions) HumaOptions {
 		result.Description = lo.Ternary(opt.Description != "", opt.Description, result.Description)
 		result.DocsPath = lo.Ternary(opt.DocsPath != "", opt.DocsPath, result.DocsPath)
 		result.OpenAPIPath = lo.Ternary(opt.OpenAPIPath != "", opt.OpenAPIPath, result.OpenAPIPath)
+		result.SchemasPath = lo.Ternary(opt.SchemasPath != "", opt.SchemasPath, result.SchemasPath)
+		result.DocsRenderer = lo.Ternary(opt.DocsRenderer != "", opt.DocsRenderer, result.DocsRenderer)
 		result.DisableDocsRoutes = lo.Ternary(opt.DisableDocsRoutes, true, result.DisableDocsRoutes)
 	})
 	return result
 }
 
-// ApplyHumaConfig documents related behavior.
+// ApplyHumaConfig copies adapter Huma options into a Huma config.
 func ApplyHumaConfig(cfg *huma.Config, opts HumaOptions) {
 	if cfg == nil {
 		return
@@ -109,11 +118,16 @@ func ApplyHumaConfig(cfg *huma.Config, opts HumaOptions) {
 	if opts.DisableDocsRoutes {
 		cfg.DocsPath = ""
 		cfg.OpenAPIPath = ""
+		cfg.SchemasPath = ""
 		return
 	}
 
 	cfg.DocsPath = normalizeDocsPath(opts.DocsPath)
 	cfg.OpenAPIPath = normalizeOpenAPIPath(opts.OpenAPIPath)
+	cfg.SchemasPath = normalizeSchemasPath(opts.SchemasPath)
+	if opts.DocsRenderer != "" {
+		cfg.DocsRenderer = opts.DocsRenderer
+	}
 }
 
 func normalizeDocsPath(path string) string {
@@ -139,6 +153,19 @@ func normalizeOpenAPIPath(path string) string {
 	return ensureLeadingSlash(trimmed)
 }
 
+func normalizeSchemasPath(path string) string {
+	trimmed := strings.TrimSpace(path)
+	if trimmed == "" {
+		return "/schemas"
+	}
+
+	trimmed = strings.TrimSuffix(trimmed, "/")
+	if trimmed == "" {
+		return "/schemas"
+	}
+	return ensureLeadingSlash(trimmed)
+}
+
 func ensureLeadingSlash(path string) string {
 	if strings.HasPrefix(path, "/") {
 		return path
@@ -146,7 +173,7 @@ func ensureLeadingSlash(path string) string {
 	return "/" + path
 }
 
-// WithRouteParams documents related behavior.
+// WithRouteParams stores adapter-extracted path parameters on the context.
 func WithRouteParams(ctx context.Context, params map[string]string) context.Context {
 	if len(params) == 0 {
 		return ctx
@@ -154,7 +181,7 @@ func WithRouteParams(ctx context.Context, params map[string]string) context.Cont
 	return context.WithValue(ctx, routeParamsCtxKey{}, params)
 }
 
-// RouteParam documents related behavior.
+// RouteParam retrieves a path parameter previously stored on the context.
 func RouteParam(ctx context.Context, name string) string {
 	if ctx == nil || name == "" {
 		return ""

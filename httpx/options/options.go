@@ -13,10 +13,7 @@ import (
 	"github.com/samber/lo"
 )
 
-// ServerOptions documents related behavior.
-//
-// Note.
-// Note.
+// ServerOptions collects higher-level server construction settings.
 type ServerOptions struct {
 	Adapter            adapter.Adapter
 	Logger             *slog.Logger
@@ -28,10 +25,10 @@ type ServerOptions struct {
 	HumaTitle          string
 	HumaVersion        string
 	HumaDescription    string
-	ReadTimeout        time.Duration
-	WriteTimeout       time.Duration
-	IdleTimeout        time.Duration
-	MaxHeaderBytes     int
+	DocsPath           string
+	OpenAPIPath        string
+	SchemasPath        string
+	DocsRenderer       string
 	EnablePanicRecover bool
 	EnableAccessLog    bool
 }
@@ -45,19 +42,19 @@ func DefaultServerOptions() *ServerOptions {
 		HumaTitle:          "My API",
 		HumaVersion:        "1.0.0",
 		HumaDescription:    "API Documentation",
-		ReadTimeout:        15 * time.Second,
-		WriteTimeout:       15 * time.Second,
-		IdleTimeout:        60 * time.Second,
-		MaxHeaderBytes:     1 << 20, // 1MB
+		DocsPath:           "/docs",
+		OpenAPIPath:        "/openapi",
+		SchemasPath:        "/schemas",
+		DocsRenderer:       httpx.DocsRendererStoplightElements,
 		EnablePanicRecover: true,
-		EnableAccessLog:    true,
+		EnableAccessLog:    false,
 	}
 }
 
-// ServerOption documents related behavior.
+// ServerOption mutates `ServerOptions`.
 type ServerOption func(*ServerOptions)
 
-// Compose documents related behavior.
+// Compose combines multiple option functions into one.
 func Compose(opts ...ServerOption) ServerOption {
 	return func(o *ServerOptions) {
 		lo.ForEach(opts, func(opt ServerOption, _ int) {
@@ -117,7 +114,7 @@ func WithOpenAPIDocs(enabled bool) ServerOption {
 	}
 }
 
-// WithOpenAPIInfo configures related behavior.
+// WithOpenAPIInfo sets OpenAPI title, version, and description fields.
 func WithOpenAPIInfo(title, version, description string) ServerOption {
 	return func(o *ServerOptions) {
 		o.HumaTitle = title
@@ -126,58 +123,21 @@ func WithOpenAPIInfo(title, version, description string) ServerOption {
 	}
 }
 
-// WithTimeouts configures related behavior.
-func WithTimeouts(read, write, idle time.Duration) ServerOption {
-	return func(o *ServerOptions) {
-		o.ReadTimeout = read
-		o.WriteTimeout = write
-		o.IdleTimeout = idle
-	}
-}
-
-// WithReadTimeout configures related behavior.
-func WithReadTimeout(timeout time.Duration) ServerOption {
-	return func(o *ServerOptions) {
-		o.ReadTimeout = timeout
-	}
-}
-
-// WithWriteTimeout configures related behavior.
-func WithWriteTimeout(timeout time.Duration) ServerOption {
-	return func(o *ServerOptions) {
-		o.WriteTimeout = timeout
-	}
-}
-
-// WithIdleTimeout configures related behavior.
-func WithIdleTimeout(timeout time.Duration) ServerOption {
-	return func(o *ServerOptions) {
-		o.IdleTimeout = timeout
-	}
-}
-
-// WithMaxHeaderBytes configures related behavior.
-func WithMaxHeaderBytes(bytes int) ServerOption {
-	return func(o *ServerOptions) {
-		o.MaxHeaderBytes = bytes
-	}
-}
-
-// WithPanicRecover configures related behavior.
+// WithPanicRecover enables or disables panic recovery for typed httpx handlers.
 func WithPanicRecover(enabled bool) ServerOption {
 	return func(o *ServerOptions) {
 		o.EnablePanicRecover = enabled
 	}
 }
 
-// WithAccessLog configures related behavior.
+// WithAccessLog enables or disables request logging in the httpx layer.
 func WithAccessLog(enabled bool) ServerOption {
 	return func(o *ServerOptions) {
 		o.EnableAccessLog = enabled
 	}
 }
 
-// Build documents related behavior.
+// Build converts `ServerOptions` into `httpx.ServerOption` values.
 func (o *ServerOptions) Build() []httpx.ServerOption {
 	opts := []httpx.ServerOption{
 		httpx.WithLogger(o.Logger),
@@ -198,13 +158,22 @@ func (o *ServerOptions) Build() []httpx.ServerOption {
 		opts = append(opts, httpx.WithValidation())
 	}
 
-	// Note: OpenAPI options are now configured at adapter creation time.
-	// Use adapter.New(engine, adapter.HumaOptions{Title: "...", Version: "...", DisableDocsRoutes: !o.OpenAPIDocsEnabled})
+	opts = append(opts, httpx.WithOpenAPIInfo(o.HumaTitle, o.HumaVersion, o.HumaDescription))
+	opts = append(opts, httpx.WithOpenAPIDocs(o.OpenAPIDocsEnabled))
+	opts = append(opts, httpx.WithDocs(httpx.DocsOptions{
+		Enabled:     o.OpenAPIDocsEnabled,
+		DocsPath:    o.DocsPath,
+		OpenAPIPath: o.OpenAPIPath,
+		SchemasPath: o.SchemasPath,
+		Renderer:    o.DocsRenderer,
+	}))
+	opts = append(opts, httpx.WithPanicRecover(o.EnablePanicRecover))
+	opts = append(opts, httpx.WithAccessLog(o.EnableAccessLog))
 
 	return opts
 }
 
-// HTTPClientOptions documents related behavior.
+// HTTPClientOptions collects standard `http.Client` construction settings.
 type HTTPClientOptions struct {
 	Timeout   time.Duration
 	Transport http.RoundTripper
@@ -218,7 +187,7 @@ func DefaultHTTPClientOptions() *HTTPClientOptions {
 	}
 }
 
-// HTTPClientOption documents related behavior.
+// HTTPClientOption mutates `HTTPClientOptions`.
 type HTTPClientOption func(*HTTPClientOptions)
 
 // WithHTTPTimeout configures related behavior.
@@ -242,7 +211,7 @@ func WithHTTPCookieJar(jar http.CookieJar) HTTPClientOption {
 	}
 }
 
-// Build documents related behavior.
+// Build constructs an `http.Client` from the configured options.
 func (o *HTTPClientOptions) Build() *http.Client {
 	return &http.Client{
 		Timeout:   o.Timeout,
@@ -251,17 +220,16 @@ func (o *HTTPClientOptions) Build() *http.Client {
 	}
 }
 
-// ContextOptions documents related behavior.
+// ContextOptions collects helper settings for building a context.Context.
 type ContextOptions struct {
-	Timeout       time.Duration
-	Deadline      time.Time
-	ValueKeys     map[contextValueKey]any
-	CancelOnPanic bool
+	Timeout   time.Duration
+	Deadline  time.Time
+	ValueKeys map[contextValueKey]any
 }
 
 type contextValueKey string
 
-// ContextOption documents related behavior.
+// ContextOption mutates `ContextOptions`.
 type ContextOption func(*ContextOptions)
 
 // WithContextTimeout configures related behavior.
@@ -288,14 +256,7 @@ func WithContextValue(key string, value interface{}) ContextOption {
 	}
 }
 
-// WithContextCancelOnPanic configures related behavior.
-func WithContextCancelOnPanic(enabled bool) ContextOption {
-	return func(o *ContextOptions) {
-		o.CancelOnPanic = enabled
-	}
-}
-
-// Build documents related behavior.
+// Build creates a context and optional cancel function from the configured values.
 func (o *ContextOptions) Build() (context.Context, context.CancelFunc) {
 	var ctx context.Context
 	var cancel context.CancelFunc
@@ -315,7 +276,7 @@ func (o *ContextOptions) Build() (context.Context, context.CancelFunc) {
 	return ctx, cancel
 }
 
-// WithContextValue configures related behavior.
+// WithContextValueOpt mutates a ContextOptions value directly.
 func WithContextValueOpt(o *ContextOptions, key string, value interface{}) *ContextOptions {
 	if o.ValueKeys == nil {
 		o.ValueKeys = make(map[contextValueKey]any)

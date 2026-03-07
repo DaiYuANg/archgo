@@ -60,12 +60,12 @@ func main() {
 		panic(err)
 	}
 
-	policySource := authx.NewInMemoryPolicySource(authx.NewPolicySnapshot(
-		[]authx.PermissionRule{
+	policySource := authx.NewMemoryPolicySource(authx.MemoryPolicySourceConfig{
+		Name: "redis-auth-policy-source",
+		InitialPermissions: []authx.PermissionRule{
 			authx.AllowPermission("u-1", "order:1001", "read"),
 		},
-		nil,
-	))
+	})
 
 	logger, err := logx.New(logx.WithConsole(true), logx.WithLevel(logx.DebugLevel))
 	if err != nil {

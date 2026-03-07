@@ -8,7 +8,14 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 )
 
-// HTTPMethod documents related behavior.
+// Docs renderer constants mirror Huma's built-in renderer options.
+const (
+	DocsRendererScalar            = huma.DocsRendererScalar
+	DocsRendererStoplightElements = huma.DocsRendererStoplightElements
+	DocsRendererSwaggerUI         = huma.DocsRendererSwaggerUI
+)
+
+// HTTP method aliases used by the route registration helpers.
 const (
 	MethodGet     = http.MethodGet
 	MethodPost    = http.MethodPost
@@ -19,7 +26,7 @@ const (
 	MethodOptions = http.MethodOptions
 )
 
-// RouteInfo documents related behavior.
+// RouteInfo describes a registered route for diagnostics and tests.
 type RouteInfo struct {
 	Method      string   `json:"method"`
 	Path        string   `json:"path"`
@@ -33,26 +40,29 @@ func (r RouteInfo) String() string {
 	return r.Method + " " + r.Path + " -> " + r.HandlerName
 }
 
-// TypedHandler documents related behavior.
-// Note.
+// TypedHandler is the typed handler signature used by `httpx` routes.
 type TypedHandler[I, O any] func(ctx context.Context, input *I) (*O, error)
 
-// OperationOption documents related behavior.
+// OperationOption mutates a Huma operation before registration.
 type OperationOption func(*huma.Operation)
 
-// HumaOptions documents related behavior.
+// HumaOptions configures Huma-backed OpenAPI and docs behavior.
 type HumaOptions struct {
-	// Title documents related behavior.
+	// Title sets the OpenAPI info title.
 	Title string
-	// Version documents related behavior.
+	// Version sets the OpenAPI info version.
 	Version string
-	// Description documents related behavior.
+	// Description sets the OpenAPI info description.
 	Description string
-	// DocsPath provides default behavior.
+	// DocsPath sets the docs UI route.
 	DocsPath string
-	// OpenAPIPath provides default behavior.
+	// OpenAPIPath sets the OpenAPI spec route prefix, without extension.
 	OpenAPIPath string
-	// DisableDocsRoutes closes related resources.
+	// SchemasPath sets the JSON schema route prefix.
+	SchemasPath string
+	// DocsRenderer selects the built-in docs renderer.
+	DocsRenderer string
+	// DisableDocsRoutes disables docs, OpenAPI, and schema routes.
 	DisableDocsRoutes bool
 }
 
@@ -64,10 +74,37 @@ func DefaultHumaOptions() HumaOptions {
 		Description: "API Documentation",
 		DocsPath:    "/docs",
 		OpenAPIPath: "/openapi",
+		SchemasPath: "/schemas",
 	}
 }
 
-// ToAdapterHumaOptions converts related values.
+// ToAdapterHumaOptions converts package-level Huma options to adapter options.
 func ToAdapterHumaOptions(opts HumaOptions) adapter.HumaOptions {
 	return adapter.HumaOptions(opts)
+}
+
+// DocsOptions configures docs UI and OpenAPI/schema route exposure.
+type DocsOptions struct {
+	Enabled     bool
+	DocsPath    string
+	OpenAPIPath string
+	SchemasPath string
+	Renderer    string
+}
+
+// DefaultDocsOptions returns the default docs configuration used by httpx.
+func DefaultDocsOptions() DocsOptions {
+	return DocsOptions{
+		Enabled:     true,
+		DocsPath:    "/docs",
+		OpenAPIPath: "/openapi",
+		SchemasPath: "/schemas",
+		Renderer:    DocsRendererStoplightElements,
+	}
+}
+
+// SecurityOptions configures OpenAPI security schemes and default requirements.
+type SecurityOptions struct {
+	Schemes      map[string]*huma.SecurityScheme
+	Requirements []map[string][]string
 }

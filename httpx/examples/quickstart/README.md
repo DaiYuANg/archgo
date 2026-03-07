@@ -9,7 +9,7 @@ What it demonstrates:
 - Path param binding
 - JSON body binding
 - Validator-based request validation
-- OpenAPI metadata and docs endpoint
+- OpenAPI metadata and docs endpoint configuration
 
 ## Run
 
@@ -53,6 +53,6 @@ curl http://localhost:8080/api/v1/users/42
 
 ### OpenAPI docs
 
-- Swagger UI: `http://localhost:8080/docs`
-- OpenAPI: `http://localhost:8080/openapi.json`
-
+- Docs UI: `http://localhost:8080/docs`
+- OpenAPI JSON: `http://localhost:8080/openapi.json`
+- OpenAPI YAML: `http://localhost:8080/openapi.yaml`
