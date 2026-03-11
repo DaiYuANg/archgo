@@ -1,18 +1,16 @@
 package list
 
 import (
-	"slices"
 	"sync"
 
-	"github.com/samber/lo"
 	"github.com/samber/mo"
 )
 
 // ConcurrentList is a goroutine-safe strongly-typed list.
 // Zero value is ready to use.
 type ConcurrentList[T any] struct {
-	mu    sync.RWMutex
-	items []T
+	mu   sync.RWMutex
+	core *List[T]
 }
 
 // NewConcurrentList creates a list and copies optional items.
@@ -29,7 +27,8 @@ func (l *ConcurrentList[T]) Add(items ...T) {
 	}
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	l.items = append(l.items, items...)
+	l.ensureInitLocked()
+	l.core.Add(items...)
 }
 
 // AddAt inserts one item at index. index == Len() is allowed.
@@ -44,18 +43,8 @@ func (l *ConcurrentList[T]) AddAllAt(index int, items ...T) bool {
 	}
 	l.mu.Lock()
 	defer l.mu.Unlock()
-
-	if index < 0 || index > len(l.items) {
-		return false
-	}
-	if len(items) == 0 {
-		return true
-	}
-
-	l.items = append(l.items, items...)
-	copy(l.items[index+len(items):], l.items[index:len(l.items)-len(items)])
-	copy(l.items[index:], items)
-	return true
+	l.ensureInitLocked()
+	return l.core.AddAllAt(index, items...)
 }
 
 // Get returns item at index.
@@ -66,11 +55,10 @@ func (l *ConcurrentList[T]) Get(index int) (T, bool) {
 	}
 	l.mu.RLock()
 	defer l.mu.RUnlock()
-
-	if index < 0 || index >= len(l.items) {
+	if l.core == nil {
 		return zero, false
 	}
-	return l.items[index], true
+	return l.core.Get(index)
 }
 
 // GetOption returns item at index as mo.Option.
@@ -89,12 +77,10 @@ func (l *ConcurrentList[T]) Set(index int, item T) bool {
 	}
 	l.mu.Lock()
 	defer l.mu.Unlock()
-
-	if index < 0 || index >= len(l.items) {
+	if l.core == nil {
 		return false
 	}
-	l.items[index] = item
-	return true
+	return l.core.Set(index, item)
 }
 
 // RemoveAt removes and returns item at index.
@@ -105,15 +91,10 @@ func (l *ConcurrentList[T]) RemoveAt(index int) (T, bool) {
 	}
 	l.mu.Lock()
 	defer l.mu.Unlock()
-
-	if index < 0 || index >= len(l.items) {
+	if l.core == nil {
 		return zero, false
 	}
-	removed := l.items[index]
-	copy(l.items[index:], l.items[index+1:])
-	l.items[len(l.items)-1] = zero
-	l.items = l.items[:len(l.items)-1]
-	return removed, true
+	return l.core.RemoveAt(index)
 }
 
 // RemoveAtOption removes item at index and returns it as mo.Option.
@@ -132,17 +113,10 @@ func (l *ConcurrentList[T]) RemoveIf(predicate func(item T) bool) int {
 	}
 	l.mu.Lock()
 	defer l.mu.Unlock()
-
-	if len(l.items) == 0 {
+	if l.core == nil {
 		return 0
 	}
-
-	next := lo.Filter(l.items, func(item T, _ int) bool {
-		return !predicate(item)
-	})
-	removed := len(l.items) - len(next)
-	l.items = next
-	return removed
+	return l.core.RemoveIf(predicate)
 }
 
 // Len returns item count.
@@ -152,7 +126,10 @@ func (l *ConcurrentList[T]) Len() int {
 	}
 	l.mu.RLock()
 	defer l.mu.RUnlock()
-	return len(l.items)
+	if l.core == nil {
+		return 0
+	}
+	return l.core.Len()
 }
 
 // IsEmpty reports whether list has no items.
@@ -167,7 +144,10 @@ func (l *ConcurrentList[T]) Clear() {
 	}
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	l.items = nil
+	if l.core == nil {
+		return
+	}
+	l.core.Clear()
 }
 
 // Values returns a snapshot of items.
@@ -177,11 +157,10 @@ func (l *ConcurrentList[T]) Values() []T {
 	}
 	l.mu.RLock()
 	defer l.mu.RUnlock()
-
-	if len(l.items) == 0 {
+	if l.core == nil {
 		return nil
 	}
-	return slices.Clone(l.items)
+	return l.core.Values()
 }
 
 // Range iterates a stable snapshot from left to right until fn returns false.
@@ -198,5 +177,19 @@ func (l *ConcurrentList[T]) Range(fn func(index int, item T) bool) {
 
 // Snapshot returns an immutable-style copy in a normal List.
 func (l *ConcurrentList[T]) Snapshot() *List[T] {
-	return NewList(l.Values()...)
+	if l == nil {
+		return NewList[T]()
+	}
+	l.mu.RLock()
+	defer l.mu.RUnlock()
+	if l.core == nil {
+		return NewList[T]()
+	}
+	return l.core.Clone()
+}
+
+func (l *ConcurrentList[T]) ensureInitLocked() {
+	if l.core == nil {
+		l.core = NewList[T]()
+	}
 }

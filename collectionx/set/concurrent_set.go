@@ -2,15 +2,13 @@ package set
 
 import (
 	"sync"
-
-	"github.com/samber/lo"
 )
 
 // ConcurrentSet is a goroutine-safe set.
 // Zero value is ready to use.
 type ConcurrentSet[T comparable] struct {
-	mu    sync.RWMutex
-	items map[T]struct{}
+	mu   sync.RWMutex
+	core *Set[T]
 }
 
 // NewConcurrentSet creates a new concurrent set.
@@ -28,10 +26,8 @@ func (s *ConcurrentSet[T]) Add(items ...T) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	s.ensureInitLocked(len(items))
-	for _, item := range items {
-		s.items[item] = struct{}{}
-	}
+	s.ensureInitLocked()
+	s.core.Add(items...)
 }
 
 // AddIfAbsent inserts one item only when it does not exist.
@@ -43,11 +39,11 @@ func (s *ConcurrentSet[T]) AddIfAbsent(item T) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	s.ensureInitLocked(1)
-	if _, exists := s.items[item]; exists {
+	s.ensureInitLocked()
+	if s.core.Contains(item) {
 		return false
 	}
-	s.items[item] = struct{}{}
+	s.core.Add(item)
 	return true
 }
 
@@ -58,15 +54,10 @@ func (s *ConcurrentSet[T]) Remove(item T) bool {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-
-	if s.items == nil {
+	if s.core == nil {
 		return false
 	}
-	_, existed := s.items[item]
-	if existed {
-		delete(s.items, item)
-	}
-	return existed
+	return s.core.Remove(item)
 }
 
 // Contains reports whether item exists.
@@ -76,12 +67,10 @@ func (s *ConcurrentSet[T]) Contains(item T) bool {
 	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-
-	if s.items == nil {
+	if s.core == nil {
 		return false
 	}
-	_, ok := s.items[item]
-	return ok
+	return s.core.Contains(item)
 }
 
 // Len returns total item count.
@@ -91,7 +80,10 @@ func (s *ConcurrentSet[T]) Len() int {
 	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	return len(s.items)
+	if s.core == nil {
+		return 0
+	}
+	return s.core.Len()
 }
 
 // IsEmpty reports whether set has no items.
@@ -106,7 +98,10 @@ func (s *ConcurrentSet[T]) Clear() {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	clear(s.items)
+	if s.core == nil {
+		return
+	}
+	s.core.Clear()
 }
 
 // Values returns a snapshot of all items.
@@ -116,11 +111,10 @@ func (s *ConcurrentSet[T]) Values() []T {
 	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-
-	if len(s.items) == 0 {
+	if s.core == nil {
 		return nil
 	}
-	return lo.Keys(s.items)
+	return s.core.Values()
 }
 
 // Range iterates a stable snapshot until fn returns false.
@@ -144,20 +138,14 @@ func (s *ConcurrentSet[T]) Snapshot() *Set[T] {
 
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-
-	if len(s.items) == 0 {
+	if s.core == nil {
 		return out
 	}
-	out.items = lo.Assign(map[T]struct{}{}, s.items)
-	return out
+	return s.core.Clone()
 }
 
-func (s *ConcurrentSet[T]) ensureInitLocked(capacity int) {
-	if s.items != nil {
-		return
+func (s *ConcurrentSet[T]) ensureInitLocked() {
+	if s.core == nil {
+		s.core = &Set[T]{}
 	}
-	if capacity < 0 {
-		capacity = 0
-	}
-	s.items = make(map[T]struct{}, capacity)
 }

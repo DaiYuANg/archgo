@@ -1,24 +1,22 @@
 package mapping
 
 import (
-	"slices"
 	"sync"
 
-	"github.com/samber/lo"
 	"github.com/samber/mo"
 )
 
 // ConcurrentMultiMap is a goroutine-safe multimap.
 // Zero value is ready to use.
 type ConcurrentMultiMap[K comparable, V any] struct {
-	mu    sync.RWMutex
-	items map[K][]V
+	mu   sync.RWMutex
+	core *MultiMap[K, V]
 }
 
 // NewConcurrentMultiMap creates an empty concurrent multimap.
 func NewConcurrentMultiMap[K comparable, V any]() *ConcurrentMultiMap[K, V] {
 	return &ConcurrentMultiMap[K, V]{
-		items: make(map[K][]V),
+		core: NewMultiMap[K, V](),
 	}
 }
 
@@ -35,7 +33,7 @@ func (m *ConcurrentMultiMap[K, V]) PutAll(key K, values ...V) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.ensureInitLocked()
-	m.items[key] = append(m.items[key], values...)
+	m.core.PutAll(key, values...)
 }
 
 // Set replaces all values for key.
@@ -47,11 +45,7 @@ func (m *ConcurrentMultiMap[K, V]) Set(key K, values ...V) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.ensureInitLocked()
-	if len(values) == 0 {
-		delete(m.items, key)
-		return
-	}
-	m.items[key] = slices.Clone(values)
+	m.core.Set(key, values...)
 }
 
 // Get returns a copy of values for key.
@@ -61,12 +55,10 @@ func (m *ConcurrentMultiMap[K, V]) Get(key K) []V {
 	}
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-
-	values, ok := m.items[key]
-	if !ok || len(values) == 0 {
+	if m.core == nil {
 		return nil
 	}
-	return slices.Clone(values)
+	return m.core.Get(key)
 }
 
 // GetOption returns values for key as mo.Option.
@@ -85,15 +77,10 @@ func (m *ConcurrentMultiMap[K, V]) Delete(key K) bool {
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
-
-	if m.items == nil {
+	if m.core == nil {
 		return false
 	}
-	_, existed := m.items[key]
-	if existed {
-		delete(m.items, key)
-	}
-	return existed
+	return m.core.Delete(key)
 }
 
 // DeleteValueIf removes values matching predicate under key and returns removed count.
@@ -103,25 +90,10 @@ func (m *ConcurrentMultiMap[K, V]) DeleteValueIf(key K, predicate func(value V) 
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
-
-	if m.items == nil {
+	if m.core == nil {
 		return 0
 	}
-	values, ok := m.items[key]
-	if !ok || len(values) == 0 {
-		return 0
-	}
-
-	next := lo.Filter(values, func(item V, _ int) bool {
-		return !predicate(item)
-	})
-	removed := len(values) - len(next)
-	if len(next) == 0 {
-		delete(m.items, key)
-	} else {
-		m.items[key] = next
-	}
-	return removed
+	return m.core.DeleteValueIf(key, predicate)
 }
 
 // ContainsKey reports whether key exists.
@@ -131,12 +103,10 @@ func (m *ConcurrentMultiMap[K, V]) ContainsKey(key K) bool {
 	}
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-
-	if m.items == nil {
+	if m.core == nil {
 		return false
 	}
-	_, ok := m.items[key]
-	return ok
+	return m.core.ContainsKey(key)
 }
 
 // Len returns key count.
@@ -146,7 +116,10 @@ func (m *ConcurrentMultiMap[K, V]) Len() int {
 	}
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	return len(m.items)
+	if m.core == nil {
+		return 0
+	}
+	return m.core.Len()
 }
 
 // ValueCount returns total stored value count.
@@ -156,10 +129,10 @@ func (m *ConcurrentMultiMap[K, V]) ValueCount() int {
 	}
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-
-	return lo.SumBy(lo.Values(m.items), func(values []V) int {
-		return len(values)
-	})
+	if m.core == nil {
+		return 0
+	}
+	return m.core.ValueCount()
 }
 
 // IsEmpty reports whether map has no keys.
@@ -174,7 +147,10 @@ func (m *ConcurrentMultiMap[K, V]) Clear() {
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	clear(m.items)
+	if m.core == nil {
+		return
+	}
+	m.core.Clear()
 }
 
 // Keys returns all keys.
@@ -184,11 +160,10 @@ func (m *ConcurrentMultiMap[K, V]) Keys() []K {
 	}
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-
-	if len(m.items) == 0 {
+	if m.core == nil {
 		return nil
 	}
-	return lo.Keys(m.items)
+	return m.core.Keys()
 }
 
 // All returns a deep-copied built-in map.
@@ -198,20 +173,23 @@ func (m *ConcurrentMultiMap[K, V]) All() map[K][]V {
 	}
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-
-	if len(m.items) == 0 {
+	if m.core == nil {
 		return map[K][]V{}
 	}
-	out := make(map[K][]V, len(m.items))
-	for key, values := range m.items {
-		out[key] = slices.Clone(values)
-	}
-	return out
+	return m.core.All()
 }
 
 // Snapshot returns an immutable-style copy in a normal MultiMap.
 func (m *ConcurrentMultiMap[K, V]) Snapshot() *MultiMap[K, V] {
-	return NewMultiMapFromAll(m.All())
+	if m == nil {
+		return NewMultiMap[K, V]()
+	}
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	if m.core == nil {
+		return NewMultiMap[K, V]()
+	}
+	return NewMultiMapFromAll(m.core.All())
 }
 
 // Range iterates key-values snapshots until fn returns false.
@@ -227,8 +205,8 @@ func (m *ConcurrentMultiMap[K, V]) Range(fn func(key K, values []V) bool) {
 }
 
 func (m *ConcurrentMultiMap[K, V]) ensureInitLocked() {
-	if m.items == nil {
-		m.items = make(map[K][]V)
+	if m.core == nil {
+		m.core = NewMultiMap[K, V]()
 	}
 }
 

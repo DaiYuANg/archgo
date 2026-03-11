@@ -3,21 +3,20 @@ package mapping
 import (
 	"sync"
 
-	"github.com/samber/lo"
 	"github.com/samber/mo"
 )
 
 // ConcurrentMap is a goroutine-safe strongly-typed map.
 // Zero value is ready to use.
 type ConcurrentMap[K comparable, V any] struct {
-	mu    sync.RWMutex
-	items map[K]V
+	mu   sync.RWMutex
+	core *Map[K, V]
 }
 
 // NewConcurrentMap creates an empty concurrent map.
 func NewConcurrentMap[K comparable, V any]() *ConcurrentMap[K, V] {
 	return &ConcurrentMap[K, V]{
-		items: make(map[K]V),
+		core: NewMap[K, V](),
 	}
 }
 
@@ -28,8 +27,8 @@ func (m *ConcurrentMap[K, V]) Set(key K, value V) {
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.ensureInitLocked(1)
-	m.items[key] = value
+	m.ensureInitLocked()
+	m.core.Set(key, value)
 }
 
 // SetAll copies all entries from source.
@@ -39,8 +38,8 @@ func (m *ConcurrentMap[K, V]) SetAll(source map[K]V) {
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.ensureInitLocked(len(source))
-	m.items = lo.Assign(m.items, source)
+	m.ensureInitLocked()
+	m.core.SetAll(source)
 }
 
 // Get returns the value for key.
@@ -51,12 +50,10 @@ func (m *ConcurrentMap[K, V]) Get(key K) (V, bool) {
 	}
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-
-	if m.items == nil {
+	if m.core == nil {
 		return zero, false
 	}
-	value, ok := m.items[key]
-	return value, ok
+	return m.core.Get(key)
 }
 
 // GetOption returns value for key as mo.Option.
@@ -85,12 +82,12 @@ func (m *ConcurrentMap[K, V]) GetOrStore(key K, value V) (actual V, loaded bool)
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.ensureInitLocked(1)
+	m.ensureInitLocked()
 
-	if existing, ok := m.items[key]; ok {
+	if existing, ok := m.core.Get(key); ok {
 		return existing, true
 	}
-	m.items[key] = value
+	m.core.Set(key, value)
 	return value, false
 }
 
@@ -101,15 +98,10 @@ func (m *ConcurrentMap[K, V]) Delete(key K) bool {
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
-
-	if m.items == nil {
+	if m.core == nil {
 		return false
 	}
-	_, existed := m.items[key]
-	if existed {
-		delete(m.items, key)
-	}
-	return existed
+	return m.core.Delete(key)
 }
 
 // LoadAndDelete removes key and returns previous value.
@@ -120,15 +112,15 @@ func (m *ConcurrentMap[K, V]) LoadAndDelete(key K) (V, bool) {
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
-
-	if m.items == nil {
+	if m.core == nil {
 		return zero, false
 	}
-	value, ok := m.items[key]
-	if ok {
-		delete(m.items, key)
+	value, ok := m.core.Get(key)
+	if !ok {
+		return zero, false
 	}
-	return value, ok
+	_ = m.core.Delete(key)
+	return value, true
 }
 
 // LoadAndDeleteOption removes key and returns previous value as mo.Option.
@@ -147,7 +139,10 @@ func (m *ConcurrentMap[K, V]) Len() int {
 	}
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	return len(m.items)
+	if m.core == nil {
+		return 0
+	}
+	return m.core.Len()
 }
 
 // IsEmpty reports whether map has no entries.
@@ -162,7 +157,10 @@ func (m *ConcurrentMap[K, V]) Clear() {
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	clear(m.items)
+	if m.core == nil {
+		return
+	}
+	m.core.Clear()
 }
 
 // Keys returns a snapshot of keys.
@@ -172,11 +170,10 @@ func (m *ConcurrentMap[K, V]) Keys() []K {
 	}
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-
-	if len(m.items) == 0 {
+	if m.core == nil {
 		return nil
 	}
-	return lo.Keys(m.items)
+	return m.core.Keys()
 }
 
 // Values returns a snapshot of values.
@@ -186,11 +183,10 @@ func (m *ConcurrentMap[K, V]) Values() []V {
 	}
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-
-	if len(m.items) == 0 {
+	if m.core == nil {
 		return nil
 	}
-	return lo.Values(m.items)
+	return m.core.Values()
 }
 
 // All returns a copied built-in map.
@@ -200,11 +196,10 @@ func (m *ConcurrentMap[K, V]) All() map[K]V {
 	}
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-
-	if len(m.items) == 0 {
+	if m.core == nil {
 		return map[K]V{}
 	}
-	return lo.Assign(map[K]V{}, m.items)
+	return m.core.All()
 }
 
 // Range iterates a stable snapshot until fn returns false.
@@ -219,12 +214,8 @@ func (m *ConcurrentMap[K, V]) Range(fn func(key K, value V) bool) {
 	}
 }
 
-func (m *ConcurrentMap[K, V]) ensureInitLocked(capacity int) {
-	if m.items != nil {
-		return
+func (m *ConcurrentMap[K, V]) ensureInitLocked() {
+	if m.core == nil {
+		m.core = NewMap[K, V]()
 	}
-	if capacity < 0 {
-		capacity = 0
-	}
-	m.items = make(map[K]V, capacity)
 }

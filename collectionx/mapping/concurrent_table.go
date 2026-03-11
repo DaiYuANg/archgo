@@ -3,7 +3,6 @@ package mapping
 import (
 	"sync"
 
-	"github.com/samber/lo"
 	"github.com/samber/mo"
 )
 
@@ -11,13 +10,13 @@ import (
 // Zero value is ready to use.
 type ConcurrentTable[R comparable, C comparable, V any] struct {
 	mu   sync.RWMutex
-	data map[R]map[C]V
+	core *Table[R, C, V]
 }
 
 // NewConcurrentTable creates an empty concurrent table.
 func NewConcurrentTable[R comparable, C comparable, V any]() *ConcurrentTable[R, C, V] {
 	return &ConcurrentTable[R, C, V]{
-		data: make(map[R]map[C]V),
+		core: NewTable[R, C, V](),
 	}
 }
 
@@ -29,9 +28,7 @@ func (t *ConcurrentTable[R, C, V]) Put(rowKey R, columnKey C, value V) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	t.ensureInitLocked()
-
-	row := t.ensureRowLocked(rowKey)
-	row[columnKey] = value
+	t.core.Put(rowKey, columnKey, value)
 }
 
 // Get returns value at (rowKey, columnKey).
@@ -42,13 +39,10 @@ func (t *ConcurrentTable[R, C, V]) Get(rowKey R, columnKey C) (V, bool) {
 	}
 	t.mu.RLock()
 	defer t.mu.RUnlock()
-
-	row, ok := t.data[rowKey]
-	if !ok {
+	if t.core == nil {
 		return zero, false
 	}
-	value, ok := row[columnKey]
-	return value, ok
+	return t.core.Get(rowKey, columnKey)
 }
 
 // GetOption returns value at (rowKey, columnKey) as mo.Option.
@@ -69,12 +63,7 @@ func (t *ConcurrentTable[R, C, V]) SetRow(rowKey R, rowValues map[C]V) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	t.ensureInitLocked()
-
-	if len(rowValues) == 0 {
-		delete(t.data, rowKey)
-		return
-	}
-	t.data[rowKey] = lo.Assign(map[C]V{}, rowValues)
+	t.core.SetRow(rowKey, rowValues)
 }
 
 // Row returns one row as a copied map.
@@ -84,12 +73,10 @@ func (t *ConcurrentTable[R, C, V]) Row(rowKey R) map[C]V {
 	}
 	t.mu.RLock()
 	defer t.mu.RUnlock()
-
-	row, ok := t.data[rowKey]
-	if !ok || len(row) == 0 {
+	if t.core == nil {
 		return map[C]V{}
 	}
-	return lo.Assign(map[C]V{}, row)
+	return t.core.Row(rowKey)
 }
 
 // Column returns one column as a copied map[row]value.
@@ -99,14 +86,10 @@ func (t *ConcurrentTable[R, C, V]) Column(columnKey C) map[R]V {
 	}
 	t.mu.RLock()
 	defer t.mu.RUnlock()
-
-	out := make(map[R]V)
-	for rowKey, row := range t.data {
-		if value, ok := row[columnKey]; ok {
-			out[rowKey] = value
-		}
+	if t.core == nil {
+		return map[R]V{}
 	}
-	return out
+	return t.core.Column(columnKey)
 }
 
 // Delete removes one cell and reports whether it existed.
@@ -116,21 +99,10 @@ func (t *ConcurrentTable[R, C, V]) Delete(rowKey R, columnKey C) bool {
 	}
 	t.mu.Lock()
 	defer t.mu.Unlock()
-
-	row, ok := t.data[rowKey]
-	if !ok {
+	if t.core == nil {
 		return false
 	}
-	_, existed := row[columnKey]
-	if !existed {
-		return false
-	}
-
-	delete(row, columnKey)
-	if len(row) == 0 {
-		delete(t.data, rowKey)
-	}
-	return true
+	return t.core.Delete(rowKey, columnKey)
 }
 
 // DeleteRow removes one row and reports whether it existed.
@@ -140,12 +112,10 @@ func (t *ConcurrentTable[R, C, V]) DeleteRow(rowKey R) bool {
 	}
 	t.mu.Lock()
 	defer t.mu.Unlock()
-
-	_, existed := t.data[rowKey]
-	if existed {
-		delete(t.data, rowKey)
+	if t.core == nil {
+		return false
 	}
-	return existed
+	return t.core.DeleteRow(rowKey)
 }
 
 // DeleteColumn removes one column from all rows and returns removed cell count.
@@ -155,18 +125,10 @@ func (t *ConcurrentTable[R, C, V]) DeleteColumn(columnKey C) int {
 	}
 	t.mu.Lock()
 	defer t.mu.Unlock()
-
-	removed := 0
-	for rowKey, row := range t.data {
-		if _, ok := row[columnKey]; ok {
-			delete(row, columnKey)
-			removed++
-		}
-		if len(row) == 0 {
-			delete(t.data, rowKey)
-		}
+	if t.core == nil {
+		return 0
 	}
-	return removed
+	return t.core.DeleteColumn(columnKey)
 }
 
 // Has reports whether cell exists.
@@ -182,7 +144,10 @@ func (t *ConcurrentTable[R, C, V]) RowCount() int {
 	}
 	t.mu.RLock()
 	defer t.mu.RUnlock()
-	return len(t.data)
+	if t.core == nil {
+		return 0
+	}
+	return t.core.RowCount()
 }
 
 // Len returns total cell count.
@@ -192,10 +157,10 @@ func (t *ConcurrentTable[R, C, V]) Len() int {
 	}
 	t.mu.RLock()
 	defer t.mu.RUnlock()
-
-	return lo.SumBy(lo.Values(t.data), func(row map[C]V) int {
-		return len(row)
-	})
+	if t.core == nil {
+		return 0
+	}
+	return t.core.Len()
 }
 
 // IsEmpty reports whether table has no cells.
@@ -210,7 +175,10 @@ func (t *ConcurrentTable[R, C, V]) Clear() {
 	}
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	clear(t.data)
+	if t.core == nil {
+		return
+	}
+	t.core.Clear()
 }
 
 // RowKeys returns all row keys.
@@ -220,11 +188,10 @@ func (t *ConcurrentTable[R, C, V]) RowKeys() []R {
 	}
 	t.mu.RLock()
 	defer t.mu.RUnlock()
-
-	if len(t.data) == 0 {
+	if t.core == nil {
 		return nil
 	}
-	return lo.Keys(t.data)
+	return t.core.RowKeys()
 }
 
 // ColumnKeys returns all unique column keys.
@@ -234,17 +201,10 @@ func (t *ConcurrentTable[R, C, V]) ColumnKeys() []C {
 	}
 	t.mu.RLock()
 	defer t.mu.RUnlock()
-
-	if len(t.data) == 0 {
+	if t.core == nil {
 		return nil
 	}
-	set := make(map[C]struct{})
-	for _, row := range t.data {
-		for columnKey := range row {
-			set[columnKey] = struct{}{}
-		}
-	}
-	return lo.Keys(set)
+	return t.core.ColumnKeys()
 }
 
 // All returns a deep-copied built-in map.
@@ -254,15 +214,10 @@ func (t *ConcurrentTable[R, C, V]) All() map[R]map[C]V {
 	}
 	t.mu.RLock()
 	defer t.mu.RUnlock()
-
-	if len(t.data) == 0 {
+	if t.core == nil {
 		return map[R]map[C]V{}
 	}
-	out := make(map[R]map[C]V, len(t.data))
-	for rowKey, row := range t.data {
-		out[rowKey] = lo.Assign(map[C]V{}, row)
-	}
-	return out
+	return t.core.All()
 }
 
 // Snapshot returns an immutable-style copy in a normal Table.
@@ -289,16 +244,7 @@ func (t *ConcurrentTable[R, C, V]) Range(fn func(rowKey R, columnKey C, value V)
 }
 
 func (t *ConcurrentTable[R, C, V]) ensureInitLocked() {
-	if t.data == nil {
-		t.data = make(map[R]map[C]V)
+	if t.core == nil {
+		t.core = NewTable[R, C, V]()
 	}
-}
-
-func (t *ConcurrentTable[R, C, V]) ensureRowLocked(rowKey R) map[C]V {
-	row, ok := t.data[rowKey]
-	if !ok {
-		row = make(map[C]V)
-		t.data[rowKey] = row
-	}
-	return row
 }

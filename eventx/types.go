@@ -24,4 +24,4 @@ type publishTask struct {
 }
 
 // subscriptionTable is a concurrent table for storing subscriptions by (event type, subscription id).
-type subscriptionTable = *collectionx.ConcurrentTable[reflect.Type, uint64, *subscription]
+type subscriptionTable = collectionx.ConcurrentTable[reflect.Type, uint64, *subscription]
