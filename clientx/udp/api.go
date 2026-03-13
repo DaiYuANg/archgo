@@ -2,16 +2,18 @@ package udp
 
 import (
 	"context"
-	"net"
 
+	"github.com/DaiYuANg/arcgo/clientx"
 	clientcodec "github.com/DaiYuANg/arcgo/clientx/codec"
 )
 
 type Client interface {
-	Dial(ctx context.Context) (net.Conn, error)
-	ListenPacket(ctx context.Context) (net.PacketConn, error)
+	clientx.Closer
+	clientx.Dialer
+	clientx.PacketListener
 	DialCodec(ctx context.Context, codec clientcodec.Codec) (*CodecConn, error)
 	ListenPacketCodec(ctx context.Context, codec clientcodec.Codec) (*CodecPacketConn, error)
 }
 
 var _ Client = (*DefaultClient)(nil)
+var _ clientx.PacketListener = (*DefaultClient)(nil)

@@ -43,6 +43,26 @@ go tool task test
 go tool task check
 ```
 
+## 文档脚本（跨平台）
+
+```bash
+go run ./scripts/deploy-docs help
+go run ./scripts/deploy-docs sync
+go run ./scripts/deploy-docs build
+go run ./scripts/deploy-docs serve
+go run ./scripts/deploy-docs deploy
+# 可选：
+# DOCS_REMOTE=origin DOCS_BRANCH=gh-pages go run ./scripts/deploy-docs deploy
+```
+
+## clientx 示例
+
+```bash
+go run ./clientx/examples/edge_http
+go run ./clientx/examples/internal_rpc_tcp
+go run ./clientx/examples/low_latency_udp
+```
+
 ## Git 提交前 Hook
 
 仓库使用 `lefthook`（通过 `go tool` 管理）。

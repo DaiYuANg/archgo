@@ -11,95 +11,117 @@ import (
 )
 
 type DefaultClient struct {
-	cfg   Config
-	hooks []clientx.Hook
+	cfg      Config
+	hooks    []clientx.Hook
+	policies []clientx.Policy
 }
 
-func New(cfg Config, opts ...Option) Client {
-	c := &DefaultClient{cfg: cfg}
-	for _, opt := range opts {
-		opt(c)
+func New(cfg Config, opts ...Option) (Client, error) {
+	normalized, err := cfg.NormalizeAndValidate()
+	if err != nil {
+		return nil, err
 	}
-	return c
+
+	c := &DefaultClient{cfg: normalized}
+	for _, opt := range opts {
+		if opt != nil {
+			opt(c)
+		}
+	}
+	return c, nil
+}
+
+func (c *DefaultClient) Close() error {
+	return nil
 }
 
 func (c *DefaultClient) Dial(ctx context.Context) (net.Conn, error) {
 	network := c.cfg.Network
-	if network == "" {
-		network = "udp"
+	operation := clientx.Operation{
+		Protocol: clientx.ProtocolUDP,
+		Kind:     clientx.OperationKindDial,
+		Op:       "dial",
+		Network:  network,
+		Addr:     c.cfg.Address,
 	}
-	start := time.Now()
 
-	dialer := &net.Dialer{
-		Timeout: c.cfg.DialTimeout,
-	}
+	return clientx.InvokeWithPolicies(ctx, operation, func(execCtx context.Context) (net.Conn, error) {
+		start := time.Now()
+		dialer := &net.Dialer{Timeout: c.cfg.DialTimeout}
 
-	conn, err := dialer.DialContext(ctx, network, c.cfg.Address)
-	if err != nil {
-		wrappedErr := clientx.WrapError(clientx.ProtocolUDP, "dial", c.cfg.Address, err)
+		conn, err := dialer.DialContext(execCtx, network, c.cfg.Address)
+		if err != nil {
+			wrappedErr := clientx.WrapError(clientx.ProtocolUDP, "dial", c.cfg.Address, err)
+			clientx.EmitDial(c.hooks, clientx.DialEvent{
+				Protocol: clientx.ProtocolUDP,
+				Op:       "dial",
+				Network:  network,
+				Addr:     c.cfg.Address,
+				Duration: time.Since(start),
+				Err:      wrappedErr,
+			})
+			return nil, wrappedErr
+		}
 		clientx.EmitDial(c.hooks, clientx.DialEvent{
 			Protocol: clientx.ProtocolUDP,
 			Op:       "dial",
 			Network:  network,
 			Addr:     c.cfg.Address,
 			Duration: time.Since(start),
-			Err:      wrappedErr,
 		})
-		return nil, wrappedErr
-	}
-	clientx.EmitDial(c.hooks, clientx.DialEvent{
-		Protocol: clientx.ProtocolUDP,
-		Op:       "dial",
-		Network:  network,
-		Addr:     c.cfg.Address,
-		Duration: time.Since(start),
-	})
 
-	return &timeoutConn{
-		Conn:         conn,
-		readTimeout:  c.cfg.ReadTimeout,
-		writeTimeout: c.cfg.WriteTimeout,
-		addr:         c.cfg.Address,
-		hooks:        c.hooks,
-	}, nil
+		return &timeoutConn{
+			Conn:         conn,
+			readTimeout:  c.cfg.ReadTimeout,
+			writeTimeout: c.cfg.WriteTimeout,
+			addr:         c.cfg.Address,
+			hooks:        c.hooks,
+		}, nil
+	}, c.policies...)
 }
 
 func (c *DefaultClient) ListenPacket(ctx context.Context) (net.PacketConn, error) {
 	network := c.cfg.Network
-	if network == "" {
-		network = "udp"
+	operation := clientx.Operation{
+		Protocol: clientx.ProtocolUDP,
+		Kind:     clientx.OperationKindListen,
+		Op:       "listen",
+		Network:  network,
+		Addr:     c.cfg.Address,
 	}
-	start := time.Now()
 
-	lc := &net.ListenConfig{}
-	conn, err := lc.ListenPacket(ctx, network, c.cfg.Address)
-	if err != nil {
-		wrappedErr := clientx.WrapError(clientx.ProtocolUDP, "listen", c.cfg.Address, err)
+	return clientx.InvokeWithPolicies(ctx, operation, func(execCtx context.Context) (net.PacketConn, error) {
+		start := time.Now()
+		lc := &net.ListenConfig{}
+		conn, err := lc.ListenPacket(execCtx, network, c.cfg.Address)
+		if err != nil {
+			wrappedErr := clientx.WrapError(clientx.ProtocolUDP, "listen", c.cfg.Address, err)
+			clientx.EmitDial(c.hooks, clientx.DialEvent{
+				Protocol: clientx.ProtocolUDP,
+				Op:       "listen",
+				Network:  network,
+				Addr:     c.cfg.Address,
+				Duration: time.Since(start),
+				Err:      wrappedErr,
+			})
+			return nil, wrappedErr
+		}
 		clientx.EmitDial(c.hooks, clientx.DialEvent{
 			Protocol: clientx.ProtocolUDP,
 			Op:       "listen",
 			Network:  network,
 			Addr:     c.cfg.Address,
 			Duration: time.Since(start),
-			Err:      wrappedErr,
 		})
-		return nil, wrappedErr
-	}
-	clientx.EmitDial(c.hooks, clientx.DialEvent{
-		Protocol: clientx.ProtocolUDP,
-		Op:       "listen",
-		Network:  network,
-		Addr:     c.cfg.Address,
-		Duration: time.Since(start),
-	})
 
-	return &timeoutPacketConn{
-		PacketConn:   conn,
-		readTimeout:  c.cfg.ReadTimeout,
-		writeTimeout: c.cfg.WriteTimeout,
-		addr:         c.cfg.Address,
-		hooks:        c.hooks,
-	}, nil
+		return &timeoutPacketConn{
+			PacketConn:   conn,
+			readTimeout:  c.cfg.ReadTimeout,
+			writeTimeout: c.cfg.WriteTimeout,
+			addr:         c.cfg.Address,
+			hooks:        c.hooks,
+		}, nil
+	}, c.policies...)
 }
 
 func (c *DefaultClient) DialCodec(ctx context.Context, codec clientcodec.Codec) (*CodecConn, error) {

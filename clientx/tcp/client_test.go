@@ -14,12 +14,16 @@ import (
 )
 
 func TestDialErrorIsTyped(t *testing.T) {
-	client := New(Config{
+	client, err := New(Config{
 		Address:     "127.0.0.1:1",
 		DialTimeout: 150 * time.Millisecond,
 	})
+	if err != nil {
+		t.Fatalf("new client failed: %v", err)
+	}
+	defer func() { _ = client.Close() }()
 
-	_, err := client.Dial(context.Background())
+	_, err = client.Dial(context.Background())
 	if err == nil {
 		t.Fatal("expected dial error, got nil")
 	}
@@ -62,11 +66,15 @@ func TestReadTimeoutIsTypedAndStillNetError(t *testing.T) {
 		<-done
 	}()
 
-	client := New(Config{
+	client, err := New(Config{
 		Address:     ln.Addr().String(),
 		DialTimeout: time.Second,
 		ReadTimeout: 40 * time.Millisecond,
 	})
+	if err != nil {
+		t.Fatalf("new client failed: %v", err)
+	}
+	defer func() { _ = client.Close() }()
 
 	conn, err := client.Dial(context.Background())
 	if err != nil {
@@ -120,12 +128,16 @@ func TestDialCodecRoundTrip(t *testing.T) {
 		serverErr <- cc.WriteValue(payload{Message: "ack:" + req.Message})
 	}()
 
-	client := New(Config{
+	client, err := New(Config{
 		Address:      ln.Addr().String(),
 		DialTimeout:  time.Second,
 		ReadTimeout:  time.Second,
 		WriteTimeout: time.Second,
 	})
+	if err != nil {
+		t.Fatalf("new client failed: %v", err)
+	}
+	defer func() { _ = client.Close() }()
 
 	cc, err := client.DialCodec(context.Background(), clientcodec.JSON, clientcodec.NewLengthPrefixed(1024))
 	if err != nil {
@@ -151,8 +163,13 @@ func TestDialCodecRoundTrip(t *testing.T) {
 }
 
 func TestDialCodecWithNilCodec(t *testing.T) {
-	client := New(Config{Address: "127.0.0.1:9000"})
-	_, err := client.DialCodec(context.Background(), nil, clientcodec.NewLengthPrefixed(1024))
+	client, err := New(Config{Address: "127.0.0.1:9000"})
+	if err != nil {
+		t.Fatalf("new client failed: %v", err)
+	}
+	defer func() { _ = client.Close() }()
+
+	_, err = client.DialCodec(context.Background(), nil, clientcodec.NewLengthPrefixed(1024))
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -163,7 +180,7 @@ func TestDialCodecWithNilCodec(t *testing.T) {
 
 func TestDialEmitsHookOnError(t *testing.T) {
 	var got clientx.DialEvent
-	client := New(
+	client, err := New(
 		Config{
 			Address:     "127.0.0.1:1",
 			DialTimeout: 100 * time.Millisecond,
@@ -174,8 +191,12 @@ func TestDialEmitsHookOnError(t *testing.T) {
 			},
 		}),
 	)
+	if err != nil {
+		t.Fatalf("new client failed: %v", err)
+	}
+	defer func() { _ = client.Close() }()
 
-	_, err := client.Dial(context.Background())
+	_, err = client.Dial(context.Background())
 	if err == nil {
 		t.Fatal("expected dial error, got nil")
 	}
@@ -187,5 +208,39 @@ func TestDialEmitsHookOnError(t *testing.T) {
 	}
 	if got.Err == nil {
 		t.Fatal("expected hook error to be set")
+	}
+}
+
+func TestNewWithInvalidConfig(t *testing.T) {
+	_, err := New(Config{})
+	if err == nil {
+		t.Fatal("expected config validation error, got nil")
+	}
+	if !errors.Is(err, ErrInvalidConfig) {
+		t.Fatalf("expected ErrInvalidConfig, got %v", err)
+	}
+}
+
+func TestDialPolicyBeforeError(t *testing.T) {
+	denyErr := errors.New("deny dial")
+	client, err := New(
+		Config{Address: "127.0.0.1:1"},
+		WithPolicies(clientx.PolicyFuncs{
+			BeforeFunc: func(ctx context.Context, operation clientx.Operation) (context.Context, error) {
+				if operation.Protocol != clientx.ProtocolTCP || operation.Kind != clientx.OperationKindDial {
+					t.Fatalf("unexpected operation: %+v", operation)
+				}
+				return ctx, denyErr
+			},
+		}),
+	)
+	if err != nil {
+		t.Fatalf("new client failed: %v", err)
+	}
+	defer func() { _ = client.Close() }()
+
+	_, err = client.Dial(context.Background())
+	if !errors.Is(err, denyErr) {
+		t.Fatalf("expected policy error, got %v", err)
 	}
 }

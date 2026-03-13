@@ -2,8 +2,6 @@ package clientx
 
 import (
 	"time"
-
-	"github.com/samber/lo"
 )
 
 type Hook interface {
@@ -47,17 +45,33 @@ type IOEvent struct {
 }
 
 func EmitDial(hooks []Hook, event DialEvent) {
-	lo.ForEach(hooks, func(h Hook, _ int) {
-		if h != nil {
-			h.OnDial(event)
-		}
-	})
+	for _, h := range hooks {
+		emitDialSafe(h, event)
+	}
 }
 
 func EmitIO(hooks []Hook, event IOEvent) {
-	lo.ForEach(hooks, func(h Hook, _ int) {
-		if h != nil {
-			h.OnIO(event)
-		}
-	})
+	for _, h := range hooks {
+		emitIOSafe(h, event)
+	}
+}
+
+func emitDialSafe(h Hook, event DialEvent) {
+	if h == nil {
+		return
+	}
+	defer func() {
+		_ = recover()
+	}()
+	h.OnDial(event)
+}
+
+func emitIOSafe(h Hook, event IOEvent) {
+	if h == nil {
+		return
+	}
+	defer func() {
+		_ = recover()
+	}()
+	h.OnIO(event)
 }

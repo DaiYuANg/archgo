@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/DaiYuANg/arcgo/observabilityx"
+	"github.com/samber/lo"
 )
 
 const (
@@ -98,8 +99,11 @@ func WithParallelDispatch(enabled bool) Option {
 
 // WithMiddleware appends global middleware.
 func WithMiddleware(mw ...Middleware) Option {
+	filtered := lo.Filter(mw, func(item Middleware, _ int) bool {
+		return item != nil
+	})
 	return func(o *options) {
-		o.middleware = append(o.middleware, mw...)
+		o.middleware = append(o.middleware, filtered...)
 	}
 }
 
@@ -132,7 +136,10 @@ type SubscribeOption func(*subscribeOptions)
 
 // WithSubscriberMiddleware appends subscription-level middleware.
 func WithSubscriberMiddleware(mw ...Middleware) SubscribeOption {
+	filtered := lo.Filter(mw, func(item Middleware, _ int) bool {
+		return item != nil
+	})
 	return func(o *subscribeOptions) {
-		o.middleware = append(o.middleware, mw...)
+		o.middleware = append(o.middleware, filtered...)
 	}
 }

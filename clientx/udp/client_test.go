@@ -30,12 +30,16 @@ func TestDialRoundTrip(t *testing.T) {
 		serverErr <- err
 	}()
 
-	client := New(Config{
+	client, err := New(Config{
 		Address:      server.LocalAddr().String(),
 		DialTimeout:  time.Second,
 		ReadTimeout:  time.Second,
 		WriteTimeout: time.Second,
 	})
+	if err != nil {
+		t.Fatalf("new client failed: %v", err)
+	}
+	defer func() { _ = client.Close() }()
 
 	conn, err := client.Dial(context.Background())
 	if err != nil {
@@ -62,10 +66,14 @@ func TestDialRoundTrip(t *testing.T) {
 }
 
 func TestListenPacketReadTimeout(t *testing.T) {
-	client := New(Config{
+	client, err := New(Config{
 		Address:     "127.0.0.1:0",
 		ReadTimeout: 40 * time.Millisecond,
 	})
+	if err != nil {
+		t.Fatalf("new client failed: %v", err)
+	}
+	defer func() { _ = client.Close() }()
 
 	conn, err := client.ListenPacket(context.Background())
 	if err != nil {
@@ -105,11 +113,15 @@ func TestDialCodecRoundTrip(t *testing.T) {
 		Message string `json:"message"`
 	}
 
-	serverClient := New(Config{
+	serverClient, err := New(Config{
 		Address:      "127.0.0.1:0",
 		ReadTimeout:  time.Second,
 		WriteTimeout: time.Second,
 	})
+	if err != nil {
+		t.Fatalf("new server client failed: %v", err)
+	}
+	defer func() { _ = serverClient.Close() }()
 
 	server, err := serverClient.ListenPacketCodec(context.Background(), clientcodec.JSON)
 	if err != nil {
@@ -128,12 +140,16 @@ func TestDialCodecRoundTrip(t *testing.T) {
 		serverErr <- server.WriteValueTo(payload{Message: "ack:" + req.Message}, addr)
 	}()
 
-	client := New(Config{
+	client, err := New(Config{
 		Address:      server.Raw().LocalAddr().String(),
 		DialTimeout:  time.Second,
 		ReadTimeout:  time.Second,
 		WriteTimeout: time.Second,
 	})
+	if err != nil {
+		t.Fatalf("new client failed: %v", err)
+	}
+	defer func() { _ = client.Close() }()
 
 	codecConn, err := client.DialCodec(context.Background(), clientcodec.JSON)
 	if err != nil {
@@ -159,8 +175,13 @@ func TestDialCodecRoundTrip(t *testing.T) {
 }
 
 func TestDialCodecWithNilCodec(t *testing.T) {
-	client := New(Config{Address: "127.0.0.1:9000"})
-	_, err := client.DialCodec(context.Background(), nil)
+	client, err := New(Config{Address: "127.0.0.1:9000"})
+	if err != nil {
+		t.Fatalf("new client failed: %v", err)
+	}
+	defer func() { _ = client.Close() }()
+
+	_, err = client.DialCodec(context.Background(), nil)
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -171,7 +192,7 @@ func TestDialCodecWithNilCodec(t *testing.T) {
 
 func TestListenPacketEmitsIOHook(t *testing.T) {
 	var got clientx.IOEvent
-	client := New(
+	client, err := New(
 		Config{
 			Address:     "127.0.0.1:0",
 			ReadTimeout: 40 * time.Millisecond,
@@ -182,6 +203,10 @@ func TestListenPacketEmitsIOHook(t *testing.T) {
 			},
 		}),
 	)
+	if err != nil {
+		t.Fatalf("new client failed: %v", err)
+	}
+	defer func() { _ = client.Close() }()
 
 	conn, err := client.ListenPacket(context.Background())
 	if err != nil {

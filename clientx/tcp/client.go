@@ -12,35 +12,79 @@ import (
 )
 
 type DefaultClient struct {
-	cfg   Config
-	hooks []clientx.Hook
+	cfg      Config
+	hooks    []clientx.Hook
+	policies []clientx.Policy
 }
 
-func New(cfg Config, opts ...Option) Client {
-	c := &DefaultClient{cfg: cfg}
-	for _, opt := range opts {
-		opt(c)
+func New(cfg Config, opts ...Option) (Client, error) {
+	normalized, err := cfg.NormalizeAndValidate()
+	if err != nil {
+		return nil, err
 	}
-	return c
+
+	c := &DefaultClient{cfg: normalized}
+	for _, opt := range opts {
+		if opt != nil {
+			opt(c)
+		}
+	}
+	return c, nil
+}
+
+func (c *DefaultClient) Close() error {
+	return nil
 }
 
 func (c *DefaultClient) Dial(ctx context.Context) (net.Conn, error) {
 	network := c.cfg.Network
-	if network == "" {
-		network = "tcp"
-	}
-	start := time.Now()
-
-	dialer := &net.Dialer{
-		Timeout:   c.cfg.DialTimeout,
-		KeepAlive: c.cfg.KeepAlive,
+	operation := clientx.Operation{
+		Protocol: clientx.ProtocolTCP,
+		Kind:     clientx.OperationKindDial,
+		Op:       "dial",
+		Network:  network,
+		Addr:     c.cfg.Address,
 	}
 
-	if c.cfg.TLS.Enabled {
-		conn, err := tls.DialWithDialer(dialer, network, c.cfg.Address, &tls.Config{
-			InsecureSkipVerify: c.cfg.TLS.InsecureSkipVerify,
-			ServerName:         c.cfg.TLS.ServerName,
-		})
+	return clientx.InvokeWithPolicies(ctx, operation, func(execCtx context.Context) (net.Conn, error) {
+		start := time.Now()
+		dialer := &net.Dialer{
+			Timeout:   c.cfg.DialTimeout,
+			KeepAlive: c.cfg.KeepAlive,
+		}
+
+		if c.cfg.TLS.Enabled {
+			tlsDialer := &tls.Dialer{
+				NetDialer: dialer,
+				Config: &tls.Config{
+					InsecureSkipVerify: c.cfg.TLS.InsecureSkipVerify,
+					ServerName:         c.cfg.TLS.ServerName,
+				},
+			}
+			conn, err := tlsDialer.DialContext(execCtx, network, c.cfg.Address)
+			if err != nil {
+				wrappedErr := clientx.WrapError(clientx.ProtocolTCP, "dial", c.cfg.Address, err)
+				clientx.EmitDial(c.hooks, clientx.DialEvent{
+					Protocol: clientx.ProtocolTCP,
+					Op:       "dial",
+					Network:  network,
+					Addr:     c.cfg.Address,
+					Duration: time.Since(start),
+					Err:      wrappedErr,
+				})
+				return nil, wrappedErr
+			}
+			clientx.EmitDial(c.hooks, clientx.DialEvent{
+				Protocol: clientx.ProtocolTCP,
+				Op:       "dial",
+				Network:  network,
+				Addr:     c.cfg.Address,
+				Duration: time.Since(start),
+			})
+			return wrapConn(conn, c.cfg, c.hooks), nil
+		}
+
+		conn, err := dialer.DialContext(execCtx, network, c.cfg.Address)
 		if err != nil {
 			wrappedErr := clientx.WrapError(clientx.ProtocolTCP, "dial", c.cfg.Address, err)
 			clientx.EmitDial(c.hooks, clientx.DialEvent{
@@ -61,29 +105,7 @@ func (c *DefaultClient) Dial(ctx context.Context) (net.Conn, error) {
 			Duration: time.Since(start),
 		})
 		return wrapConn(conn, c.cfg, c.hooks), nil
-	}
-
-	conn, err := dialer.DialContext(ctx, network, c.cfg.Address)
-	if err != nil {
-		wrappedErr := clientx.WrapError(clientx.ProtocolTCP, "dial", c.cfg.Address, err)
-		clientx.EmitDial(c.hooks, clientx.DialEvent{
-			Protocol: clientx.ProtocolTCP,
-			Op:       "dial",
-			Network:  network,
-			Addr:     c.cfg.Address,
-			Duration: time.Since(start),
-			Err:      wrappedErr,
-		})
-		return nil, wrappedErr
-	}
-	clientx.EmitDial(c.hooks, clientx.DialEvent{
-		Protocol: clientx.ProtocolTCP,
-		Op:       "dial",
-		Network:  network,
-		Addr:     c.cfg.Address,
-		Duration: time.Since(start),
-	})
-	return wrapConn(conn, c.cfg, c.hooks), nil
+	}, c.policies...)
 }
 
 func (c *DefaultClient) DialCodec(ctx context.Context, codec clientcodec.Codec, framer clientcodec.Framer) (*CodecConn, error) {

@@ -19,7 +19,11 @@ docs/
 │   │   ├── navbar.html
 │   │   └── navbar/version-switcher.html
 └── scripts/
-    └── sync-versions.go
+    ├── sync-versions.go            # 入口
+    ├── git.go                      # git 元信息读取
+    ├── versions.go                 # 版本模型与 semver 比较
+    ├── versions_file.go            # versions.yaml 写入
+    └── filesystem.go               # 目录/文件复制
 ```
 
 ## ✅ 运行前提（Hextra）
@@ -34,7 +38,7 @@ docs/
 
 ```bash
 cd docs
-go run scripts/sync-versions.go
+go run ./scripts
 ```
 
 脚本会自动：

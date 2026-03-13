@@ -118,11 +118,10 @@ func (b *Bus) snapshotHandlersByEventType(eventType reflect.Type) []HandlerFunc 
 		return nil
 	}
 
-	handlers := make([]HandlerFunc, 0, len(row))
-	for _, sub := range row {
-		if sub != nil && sub.handler != nil {
-			handlers = append(handlers, sub.handler)
+	return lo.FilterMap(lo.Values(row), func(sub *subscription, _ int) (HandlerFunc, bool) {
+		if sub == nil || sub.handler == nil {
+			return nil, false
 		}
-	}
-	return handlers
+		return sub.handler, true
+	})
 }

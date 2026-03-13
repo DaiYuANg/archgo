@@ -160,17 +160,15 @@ func WithHumaMiddleware(middlewares ...func(huma.Context, func(huma.Context))) S
 // WithSecurity registers security schemes and default top-level requirements.
 func WithSecurity(opts SecurityOptions) ServerOption {
 	return func(s *Server) {
-		for name, scheme := range opts.Schemes {
-			if name != "" && scheme != nil {
-				s.openAPIPatches.Add(func(doc *huma.OpenAPI) {
-					components := ensureComponents(doc)
-					if components.SecuritySchemes == nil {
-						components.SecuritySchemes = map[string]*huma.SecurityScheme{}
-					}
-					components.SecuritySchemes[name] = cloneSecurityScheme(scheme)
-				})
-			}
-		}
+		forEachValidSecurityScheme(opts.Schemes, func(name string, scheme *huma.SecurityScheme) {
+			s.openAPIPatches.Add(func(doc *huma.OpenAPI) {
+				components := ensureComponents(doc)
+				if components.SecuritySchemes == nil {
+					components.SecuritySchemes = map[string]*huma.SecurityScheme{}
+				}
+				components.SecuritySchemes[name] = cloneSecurityScheme(scheme)
+			})
+		})
 
 		if len(opts.Requirements) > 0 {
 			requirements := cloneSecurityRequirements(opts.Requirements)
@@ -184,16 +182,13 @@ func WithSecurity(opts SecurityOptions) ServerOption {
 // WithGlobalHeaders adds header parameters to future operations.
 func WithGlobalHeaders(headers ...*huma.Param) ServerOption {
 	return func(s *Server) {
-		for _, header := range headers {
-			if header == nil {
-				continue
-			}
+		forEachNonNilHeader(headers, func(header *huma.Param) {
 			cloned := cloneParam(header)
 			cloned.In = "header"
 			s.operationModifiers.Add(func(op *huma.Operation) {
 				appendOperationParameter(op, cloned)
 			})
-		}
+		})
 	}
 }
 
@@ -210,5 +205,32 @@ func WithValidation() ServerOption {
 func WithValidator(v *validator.Validate) ServerOption {
 	return func(s *Server) {
 		s.validator = v
+	}
+}
+
+func forEachValidSecurityScheme(
+	schemes map[string]*huma.SecurityScheme,
+	fn func(name string, scheme *huma.SecurityScheme),
+) {
+	if fn == nil {
+		return
+	}
+	for name, scheme := range schemes {
+		if name == "" || scheme == nil {
+			continue
+		}
+		fn(name, scheme)
+	}
+}
+
+func forEachNonNilHeader(headers []*huma.Param, fn func(header *huma.Param)) {
+	if fn == nil {
+		return
+	}
+	for _, header := range headers {
+		if header == nil {
+			continue
+		}
+		fn(header)
 	}
 }

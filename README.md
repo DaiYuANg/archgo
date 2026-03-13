@@ -44,6 +44,26 @@ go tool task test
 go tool task check
 ```
 
+## Docs Utility (Cross-Platform)
+
+```bash
+go run ./scripts/deploy-docs help
+go run ./scripts/deploy-docs sync
+go run ./scripts/deploy-docs build
+go run ./scripts/deploy-docs serve
+go run ./scripts/deploy-docs deploy
+# optional:
+# DOCS_REMOTE=origin DOCS_BRANCH=gh-pages go run ./scripts/deploy-docs deploy
+```
+
+## clientx Examples
+
+```bash
+go run ./clientx/examples/edge_http
+go run ./clientx/examples/internal_rpc_tcp
+go run ./clientx/examples/low_latency_udp
+```
+
 ## Git Pre-Commit Hook
 
 This repo uses `lefthook` (managed via `go tool`).

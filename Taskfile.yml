@@ -112,32 +112,38 @@ tasks:
   release:auto:
     desc: Auto bump patch version and create local tag
     cmds:
-      - go run ./scripts/tagger
+      - go run ./scripts/tagger patch
 
   release:auto:push:
     desc: Auto bump patch version and push tag
+    env:
+      TAGGER_REMOTE: '{{.REMOTE}}'
     cmds:
-      - go run ./scripts/tagger --push
+      - go run ./scripts/tagger patch-push
 
   release:minor:
     desc: Auto bump minor version and create local tag
     cmds:
-      - go run ./scripts/tagger --minor
+      - go run ./scripts/tagger minor
 
   release:minor:push:
     desc: Auto bump minor version and push tag
+    env:
+      TAGGER_REMOTE: '{{.REMOTE}}'
     cmds:
-      - go run ./scripts/tagger --minor --push
+      - go run ./scripts/tagger minor-push
 
   release:major:
     desc: Auto bump major version and create local tag
     cmds:
-      - go run ./scripts/tagger --major
+      - go run ./scripts/tagger major
 
   release:major:push:
     desc: Auto bump major version and push tag
+    env:
+      TAGGER_REMOTE: '{{.REMOTE}}'
     cmds:
-      - go run ./scripts/tagger --major --push
+      - go run ./scripts/tagger major-push
 
   tag:
     desc: Alias of release:auto
@@ -146,18 +152,25 @@ tasks:
 
   docs:version:sync:
     desc: Sync documentation versions from git tags
-    dir: '{{.ROOT_DIR}}/docs'
     cmds:
-      - go run ./scripts/sync-versions.go
+      - go run ./scripts/deploy-docs sync
 
   docs:serve:
     desc: Start Hugo development server
-    dir: '{{.ROOT_DIR}}/docs'
     cmds:
-      - go tool hugo server -D --bind 0.0.0.0
+      - go run ./scripts/deploy-docs serve
 
   docs:build:
     desc: Build production documentation
-    dir: '{{.ROOT_DIR}}/docs'
     cmds:
-      - go tool hugo --gc --minify
+      - go run ./scripts/deploy-docs build
+
+  docs:deploy:
+    desc: Build docs and force-push docs/public to docs branch
+    vars:
+      BRANCH: gh-pages
+    env:
+      DOCS_REMOTE: '{{.REMOTE}}'
+      DOCS_BRANCH: '{{.BRANCH}}'
+    cmds:
+      - go run ./scripts/deploy-docs deploy

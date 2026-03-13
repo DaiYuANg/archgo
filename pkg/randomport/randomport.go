@@ -4,30 +4,26 @@ package randomport
 import (
 	"fmt"
 	"net"
-	"sync"
+
+	"github.com/DaiYuANg/arcgo/collectionx"
 )
 
 var (
 	// usedPorts tracks ports that have been allocated during the current process.
-	usedPorts = make(map[int]bool)
-	usedMu    sync.Mutex
+	usedPorts = collectionx.NewConcurrentSet[int]()
 )
 
 // Find returns a random available port that is not currently in use.
 // It checks both TCP port availability and tracks previously allocated ports
 // to avoid conflicts when multiple servers are started in the same process.
 func Find() (int, error) {
-	usedMu.Lock()
-	defer usedMu.Unlock()
-
 	// Try up to 50 times to find an available port
 	for i := 0; i < 50; i++ {
 		port, err := findAvailablePort()
 		if err != nil {
 			continue
 		}
-		if !usedPorts[port] {
-			usedPorts[port] = true
+		if usedPorts.AddIfAbsent(port) {
 			return port, nil
 		}
 	}
@@ -50,9 +46,7 @@ func findAvailablePort() (int, error) {
 // Release releases a port back to the available pool.
 // This is primarily useful for testing scenarios.
 func Release(port int) {
-	usedMu.Lock()
-	defer usedMu.Unlock()
-	delete(usedPorts, port)
+	usedPorts.Remove(port)
 }
 
 // MustFind returns a random available port or panics if none can be found.

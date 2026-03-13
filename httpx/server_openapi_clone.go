@@ -1,0 +1,107 @@
+package httpx
+
+import (
+	"maps"
+
+	"github.com/danielgtaylor/huma/v2"
+	"github.com/samber/lo"
+)
+
+func cloneParam(param *huma.Param) *huma.Param {
+	if param == nil {
+		return nil
+	}
+	cloned := *param
+	if param.Schema != nil {
+		schema := *param.Schema
+		cloned.Schema = &schema
+	}
+	if param.Examples != nil {
+		cloned.Examples = make(map[string]*huma.Example, len(param.Examples))
+		maps.Copy(cloned.Examples, param.Examples)
+	}
+	if param.Extensions != nil {
+		cloned.Extensions = make(map[string]any, len(param.Extensions))
+		maps.Copy(cloned.Extensions, param.Extensions)
+	}
+	return &cloned
+}
+
+func cloneTag(tag *huma.Tag) *huma.Tag {
+	if tag == nil {
+		return nil
+	}
+	cloned := *tag
+	if tag.Extensions != nil {
+		cloned.Extensions = make(map[string]any, len(tag.Extensions))
+		maps.Copy(cloned.Extensions, tag.Extensions)
+	}
+	return &cloned
+}
+
+func cloneExternalDocs(docs *huma.ExternalDocs) *huma.ExternalDocs {
+	if docs == nil {
+		return nil
+	}
+	cloned := *docs
+	cloned.Extensions = cloneExtensions(docs.Extensions)
+	return &cloned
+}
+
+func cloneSecurityScheme(scheme *huma.SecurityScheme) *huma.SecurityScheme {
+	if scheme == nil {
+		return nil
+	}
+	cloned := *scheme
+	if scheme.Extensions != nil {
+		cloned.Extensions = make(map[string]any, len(scheme.Extensions))
+		maps.Copy(cloned.Extensions, scheme.Extensions)
+	}
+	return &cloned
+}
+
+func cloneExtensions(values map[string]any) map[string]any {
+	if len(values) == 0 {
+		return nil
+	}
+	cloned := make(map[string]any, len(values))
+	maps.Copy(cloned, values)
+	return cloned
+}
+
+func cloneSecurityRequirements(requirements []map[string][]string) []map[string][]string {
+	if len(requirements) == 0 {
+		return nil
+	}
+	cloned := make([]map[string][]string, 0, len(requirements))
+	for _, req := range requirements {
+		if req == nil {
+			cloned = append(cloned, nil)
+			continue
+		}
+		cloned = append(cloned, cloneStringSliceMap(req))
+	}
+	return cloned
+}
+
+func cloneStringSliceMap(values map[string][]string) map[string][]string {
+	cloned := make(map[string][]string, len(values))
+	for key, scopes := range values {
+		if scopes == nil {
+			cloned[key] = []string{}
+			continue
+		}
+		cloned[key] = append([]string(nil), scopes...)
+	}
+	return cloned
+}
+
+func findTag(tags []*huma.Tag, name string) int {
+	indexes := lo.FilterMap(tags, func(tag *huma.Tag, i int) (int, bool) {
+		return i, tag != nil && tag.Name == name
+	})
+	if len(indexes) == 0 {
+		return -1
+	}
+	return indexes[0]
+}
