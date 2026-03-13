@@ -24,11 +24,7 @@ func New(cfg Config, opts ...Option) (Client, error) {
 	}
 
 	c := &DefaultClient{cfg: normalized}
-	for _, opt := range opts {
-		if opt != nil {
-			opt(c)
-		}
-	}
+	clientx.Apply(c, opts...)
 	return c, nil
 }
 

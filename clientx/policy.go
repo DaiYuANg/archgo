@@ -109,18 +109,13 @@ func InvokeWithPolicies[T any](
 }
 
 func applyAfterPolicies(policies []Policy, ctx context.Context, operation Operation, baseErr error) error {
-	err := baseErr
-	for i := len(policies) - 1; i >= 0; i-- {
-		policy := policies[i]
-		afterErr, afterOK := callPolicyAfter(policy, ctx, operation, err)
-		if !afterOK {
-			continue
+	return lo.ReduceRight(policies, func(aggErr error, policy Policy, _ int) error {
+		afterErr, afterOK := callPolicyAfter(policy, ctx, operation, aggErr)
+		if !afterOK || afterErr == nil {
+			return aggErr
 		}
-		if afterErr != nil {
-			err = errors.Join(err, afterErr)
-		}
-	}
-	return err
+		return errors.Join(aggErr, afterErr)
+	}, baseErr)
 }
 
 func decideRetry(
@@ -130,23 +125,30 @@ func decideRetry(
 	attempt int,
 	err error,
 ) (retry bool, wait time.Duration) {
-	for _, policy := range policies {
+	type retryDecision struct {
+		retry bool
+		wait  time.Duration
+	}
+
+	decision := lo.Reduce(policies, func(agg retryDecision, policy Policy, _ int) retryDecision {
 		decider, ok := policy.(RetryDecider)
 		if !ok {
-			continue
+			return agg
 		}
 		shouldRetry, delay, retryOK := callShouldRetry(decider, ctx, operation, attempt, err)
-		if !retryOK {
-			continue
+		if !retryOK || !shouldRetry {
+			return agg
 		}
-		if !shouldRetry {
-			continue
+
+		agg.retry = true
+		if delay > agg.wait {
+			agg.wait = delay
 		}
-		retry = true
-		if delay > wait {
-			wait = delay
-		}
-	}
+		return agg
+	}, retryDecision{})
+
+	retry = decision.retry
+	wait = decision.wait
 	if wait < 0 {
 		wait = 0
 	}

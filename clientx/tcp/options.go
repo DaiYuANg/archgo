@@ -4,19 +4,26 @@ import (
 	"time"
 
 	"github.com/DaiYuANg/arcgo/clientx"
+	"github.com/samber/lo"
 )
 
 type Option func(*DefaultClient)
 
 func WithHooks(hooks ...clientx.Hook) Option {
+	filtered := lo.Filter(hooks, func(h clientx.Hook, _ int) bool {
+		return h != nil
+	})
 	return func(c *DefaultClient) {
-		c.hooks = append(c.hooks, hooks...)
+		c.hooks = append(c.hooks, filtered...)
 	}
 }
 
 func WithPolicies(policies ...clientx.Policy) Option {
+	filtered := lo.Filter(policies, func(p clientx.Policy, _ int) bool {
+		return p != nil
+	})
 	return func(c *DefaultClient) {
-		c.policies = append(c.policies, policies...)
+		c.policies = append(c.policies, filtered...)
 	}
 }
 

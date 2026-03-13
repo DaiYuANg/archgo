@@ -18,21 +18,24 @@ type Version struct {
 
 // createVersionsConfig 创建版本配置
 func createVersionsConfig(tags []string) []Version {
-	versions := make([]Version, 0, len(tags))
+	versions := make([]Version, len(tags))
 	for i, tag := range tags {
-		version := Version{
-			Name:    tag,
-			Release: tag,
-			Current: i == 0,
-		}
-		if i == 0 {
-			version.Path = "/docs"
-		} else {
-			version.Path = fmt.Sprintf("/versioned/%s/docs", tag)
-		}
-		versions = append(versions, version)
+		versions[i] = buildVersion(tag, i == 0)
 	}
 	return versions
+}
+
+func buildVersion(tag string, current bool) Version {
+	path := "/docs"
+	if !current {
+		path = fmt.Sprintf("/versioned/%s/docs", tag)
+	}
+	return Version{
+		Name:    tag,
+		Release: tag,
+		Path:    path,
+		Current: current,
+	}
 }
 
 // 按语义版本号排序（可选工具函数）

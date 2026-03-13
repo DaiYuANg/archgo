@@ -10,46 +10,60 @@ import (
 func createVersionedDirs(contentDir string, versions []Version) error {
 	versionedDir := filepath.Join(contentDir, "versioned")
 	sourceDocsDir := filepath.Join(contentDir, "docs")
-	sourceRootFiles := []string{
-		filepath.Join(contentDir, "_index.md"),
-		filepath.Join(contentDir, "_index.en.md"),
-		filepath.Join(contentDir, "_index.zh.md"),
-	}
+	sourceRootFiles := rootFiles(contentDir)
 
 	for _, version := range versions {
 		if version.Current {
 			continue
 		}
-
-		versionDir := filepath.Join(versionedDir, version.Name)
-		versionDocsDir := filepath.Join(versionDir, "docs")
-
-		if _, err := os.Stat(versionDir); err == nil {
-			fmt.Printf("   ⏭️  跳过已存在的版本目录：%s\n", version.Name)
-			continue
-		}
-
-		fmt.Printf("   📁 创建版本文档目录：%s\n", version.Name)
-		if err := os.MkdirAll(versionDocsDir, 0o755); err != nil {
-			return fmt.Errorf("无法创建目录 %s：%w", versionDir, err)
-		}
-
-		if err := copyDir(sourceDocsDir, versionDocsDir); err != nil {
-			fmt.Printf("      ⚠️  复制 docs 目录失败：%v\n", err)
-		}
-
-		for _, srcFile := range sourceRootFiles {
-			if _, err := os.Stat(srcFile); os.IsNotExist(err) {
-				continue
-			}
-			dstFile := filepath.Join(versionDir, filepath.Base(srcFile))
-			if err := copyFile(srcFile, dstFile); err != nil {
-				fmt.Printf("      ⚠️  复制文件 %s 失败：%v\n", filepath.Base(srcFile), err)
-			}
+		if err := createVersionDir(versionedDir, sourceDocsDir, sourceRootFiles, version); err != nil {
+			return err
 		}
 	}
 
 	return nil
+}
+
+func rootFiles(contentDir string) []string {
+	return []string{
+		filepath.Join(contentDir, "_index.md"),
+		filepath.Join(contentDir, "_index.en.md"),
+		filepath.Join(contentDir, "_index.zh.md"),
+	}
+}
+
+func createVersionDir(versionedDir, sourceDocsDir string, sourceRootFiles []string, version Version) error {
+	versionDir := filepath.Join(versionedDir, version.Name)
+	versionDocsDir := filepath.Join(versionDir, "docs")
+
+	if _, err := os.Stat(versionDir); err == nil {
+		fmt.Printf("   ⏭️  跳过已存在的版本目录：%s\n", version.Name)
+		return nil
+	}
+
+	fmt.Printf("   📁 创建版本文档目录：%s\n", version.Name)
+	if err := os.MkdirAll(versionDocsDir, 0o755); err != nil {
+		return fmt.Errorf("无法创建目录 %s：%w", versionDir, err)
+	}
+
+	if err := copyDir(sourceDocsDir, versionDocsDir); err != nil {
+		fmt.Printf("      ⚠️  复制 docs 目录失败：%v\n", err)
+	}
+
+	copyRootFiles(versionDir, sourceRootFiles)
+	return nil
+}
+
+func copyRootFiles(versionDir string, sourceRootFiles []string) {
+	for _, srcFile := range sourceRootFiles {
+		if _, err := os.Stat(srcFile); os.IsNotExist(err) {
+			continue
+		}
+		dstFile := filepath.Join(versionDir, filepath.Base(srcFile))
+		if err := copyFile(srcFile, dstFile); err != nil {
+			fmt.Printf("      ⚠️  复制文件 %s 失败：%v\n", filepath.Base(srcFile), err)
+		}
+	}
 }
 
 // copyDir 递归复制目录

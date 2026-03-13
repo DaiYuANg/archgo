@@ -31,15 +31,7 @@ func main() {
 		Name:  "build",
 		Usage: "Build docs with Hugo",
 		Action: func(a *goyek.A) {
-			if err := os.MkdirAll(ctx.hugoCacheDir, 0o755); err != nil {
-				a.Fatal(err)
-			}
-			if !goyekcmd.Exec(
-				a,
-				"go tool hugo --gc --minify",
-				goyekcmd.Dir(ctx.docsDir),
-				goyekcmd.Env("HUGO_CACHEDIR", ctx.hugoCacheDir),
-			) {
+			if !execHugo(a, ctx, "--gc --minify") {
 				a.FailNow()
 			}
 			a.Logf("build complete: %s", filepath.Join(ctx.docsDir, "public"))
@@ -60,16 +52,8 @@ func main() {
 		Name:  "serve",
 		Usage: "Run local Hugo server",
 		Action: func(a *goyek.A) {
-			if err := os.MkdirAll(ctx.hugoCacheDir, 0o755); err != nil {
-				a.Fatal(err)
-			}
 			a.Log("visit: http://127.0.0.1:1313")
-			if !goyekcmd.Exec(
-				a,
-				"go tool hugo server -D --bind 0.0.0.0",
-				goyekcmd.Dir(ctx.docsDir),
-				goyekcmd.Env("HUGO_CACHEDIR", ctx.hugoCacheDir),
-			) {
+			if !execHugo(a, ctx, "server -D --bind 0.0.0.0") {
 				a.FailNow()
 			}
 		},
@@ -123,20 +107,33 @@ func main() {
 		Name:  "help",
 		Usage: "Show script usage",
 		Action: func(a *goyek.A) {
-			_, _ = fmt.Fprintln(a.Output(), "Usage:")
-			_, _ = fmt.Fprintln(a.Output(), "  go run ./scripts/deploy-docs <task>")
-			_, _ = fmt.Fprintln(a.Output(), "Tasks: sync, build, serve, deploy, help")
-			_, _ = fmt.Fprintln(a.Output(), "Env (deploy): DOCS_REMOTE=origin DOCS_BRANCH=gh-pages")
+			printUsage(a.Output())
 		},
 	})
 
 	goyek.SetUsage(func() {
-		fmt.Fprintln(os.Stderr, "Usage: go run ./scripts/deploy-docs [task]")
-		fmt.Fprintln(os.Stderr, "Tasks: sync, build, serve, deploy, help")
-		fmt.Fprintln(os.Stderr, "Deploy env: DOCS_REMOTE=origin DOCS_BRANCH=gh-pages")
+		printUsage(os.Stderr)
 	})
 
 	goyek.Main(os.Args[1:])
+}
+
+func execHugo(a *goyek.A, ctx *docsContext, args string) bool {
+	if err := os.MkdirAll(ctx.hugoCacheDir, 0o755); err != nil {
+		a.Fatal(err)
+	}
+	return goyekcmd.Exec(
+		a,
+		"go tool hugo "+strings.TrimSpace(args),
+		goyekcmd.Dir(ctx.docsDir),
+		goyekcmd.Env("HUGO_CACHEDIR", ctx.hugoCacheDir),
+	)
+}
+
+func printUsage(w io.Writer) {
+	fmt.Fprintln(w, "Usage: go run ./scripts/deploy-docs [task]")
+	fmt.Fprintln(w, "Tasks: sync, build, serve, deploy, help")
+	fmt.Fprintln(w, "Deploy env: DOCS_REMOTE=origin DOCS_BRANCH=gh-pages")
 }
 
 func execOrFail(a *goyek.A, dir string, name string, args ...string) {

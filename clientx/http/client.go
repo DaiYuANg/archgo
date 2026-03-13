@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/DaiYuANg/arcgo/clientx"
+	"github.com/samber/lo"
 	"resty.dev/v3"
 )
 
@@ -41,9 +42,9 @@ func New(cfg Config, opts ...Option) (Client, error) {
 		c.SetHeader("User-Agent", normalized.UserAgent)
 	}
 	if normalized.Headers != nil {
-		for k, v := range normalized.Headers.All() {
-			c.SetHeader(k, v)
-		}
+		lo.ForEach(lo.Entries(normalized.Headers.All()), func(entry lo.Entry[string, string], _ int) {
+			c.SetHeader(entry.Key, entry.Value)
+		})
 	}
 
 	client := &DefaultClient{raw: c, baseURL: normalized.BaseURL}
@@ -55,11 +56,7 @@ func New(cfg Config, opts ...Option) (Client, error) {
 		}))
 	}
 
-	for _, opt := range opts {
-		if opt != nil {
-			opt(client)
-		}
-	}
+	clientx.Apply(client, opts...)
 	return client, nil
 }
 

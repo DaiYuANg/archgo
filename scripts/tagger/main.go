@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"strings"
 	"time"
@@ -12,6 +13,7 @@ import (
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/goyek/goyek/v3"
+	"github.com/samber/lo"
 )
 
 type bumpMode int
@@ -22,54 +24,19 @@ const (
 	bumpMajor
 )
 
+type bumpTaskSpec struct {
+	name string
+	mode bumpMode
+}
+
+var bumpTaskSpecs = []bumpTaskSpec{
+	{name: "patch", mode: bumpPatch},
+	{name: "minor", mode: bumpMinor},
+	{name: "major", mode: bumpMajor},
+}
+
 func main() {
-	patch := goyek.Define(goyek.Task{
-		Name:  "patch",
-		Usage: "Auto bump patch version and create local tag",
-		Action: func(a *goyek.A) {
-			runTagger(a, bumpPatch, false)
-		},
-	})
-
-	goyek.Define(goyek.Task{
-		Name:  "patch-push",
-		Usage: "Auto bump patch version and push tag",
-		Action: func(a *goyek.A) {
-			runTagger(a, bumpPatch, true)
-		},
-	})
-
-	goyek.Define(goyek.Task{
-		Name:  "minor",
-		Usage: "Auto bump minor version and create local tag",
-		Action: func(a *goyek.A) {
-			runTagger(a, bumpMinor, false)
-		},
-	})
-
-	goyek.Define(goyek.Task{
-		Name:  "minor-push",
-		Usage: "Auto bump minor version and push tag",
-		Action: func(a *goyek.A) {
-			runTagger(a, bumpMinor, true)
-		},
-	})
-
-	goyek.Define(goyek.Task{
-		Name:  "major",
-		Usage: "Auto bump major version and create local tag",
-		Action: func(a *goyek.A) {
-			runTagger(a, bumpMajor, false)
-		},
-	})
-
-	goyek.Define(goyek.Task{
-		Name:  "major-push",
-		Usage: "Auto bump major version and push tag",
-		Action: func(a *goyek.A) {
-			runTagger(a, bumpMajor, true)
-		},
-	})
+	patch := defineBumpTasks()
 
 	goyek.Define(goyek.Task{
 		Name:  "help",
@@ -77,19 +44,50 @@ func main() {
 		Action: func(a *goyek.A) {
 			_, _ = fmt.Fprintln(a.Output(), "Usage:")
 			_, _ = fmt.Fprintln(a.Output(), "  go run ./scripts/tagger [task]")
-			_, _ = fmt.Fprintln(a.Output(), "Tasks: patch, patch-push, minor, minor-push, major, major-push, help")
-			_, _ = fmt.Fprintln(a.Output(), "Env: TAGGER_REMOTE=origin TAGGER_NAME=auto-tagger TAGGER_EMAIL=ci@local")
+			printUsage(a.Output())
 		},
 	})
 
 	goyek.SetDefault(patch)
 	goyek.SetUsage(func() {
-		fmt.Fprintln(os.Stderr, "Usage: go run ./scripts/tagger [task]")
-		fmt.Fprintln(os.Stderr, "Tasks: patch, patch-push, minor, minor-push, major, major-push, help")
-		fmt.Fprintln(os.Stderr, "Env: TAGGER_REMOTE=origin TAGGER_NAME=auto-tagger TAGGER_EMAIL=ci@local")
+		printUsage(os.Stderr)
 	})
 
 	goyek.Main(os.Args[1:])
+}
+
+func defineBumpTasks() *goyek.DefinedTask {
+	var patch *goyek.DefinedTask
+	lo.ForEach(bumpTaskSpecs, func(spec bumpTaskSpec, _ int) {
+		mode := spec.mode
+		name := spec.name
+
+		localTask := goyek.Define(goyek.Task{
+			Name:  name,
+			Usage: fmt.Sprintf("Auto bump %s version and create local tag", name),
+			Action: func(a *goyek.A) {
+				runTagger(a, mode, false)
+			},
+		})
+		if mode == bumpPatch {
+			patch = localTask
+		}
+
+		goyek.Define(goyek.Task{
+			Name:  name + "-push",
+			Usage: fmt.Sprintf("Auto bump %s version and push tag", name),
+			Action: func(a *goyek.A) {
+				runTagger(a, mode, true)
+			},
+		})
+	})
+	return patch
+}
+
+func printUsage(w io.Writer) {
+	fmt.Fprintln(w, "Usage: go run ./scripts/tagger [task]")
+	fmt.Fprintln(w, "Tasks: patch, patch-push, minor, minor-push, major, major-push, help")
+	fmt.Fprintln(w, "Env: TAGGER_REMOTE=origin TAGGER_NAME=auto-tagger TAGGER_EMAIL=ci@local")
 }
 
 func runTagger(a *goyek.A, mode bumpMode, push bool) {

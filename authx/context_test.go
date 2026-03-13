@@ -2,37 +2,20 @@ package authx
 
 import (
 	"context"
-	"errors"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 )
 
-func TestWithIdentityAndCurrentIdentity(t *testing.T) {
-	base := context.Background()
-	identity := NewIdentity("u-1", "user", "Alice")
+func TestPrincipalContext(t *testing.T) {
+	principal := Principal{ID: "u1"}
+	ctx := WithPrincipal(context.Background(), principal)
 
-	ctx := WithIdentity(base, identity)
-	got, ok := CurrentIdentity(ctx)
+	got, ok := PrincipalFromContext(ctx)
 	assert.True(t, ok)
-	assert.Equal(t, identity.ID(), got.ID())
-}
+	assert.Equal(t, principal, got)
 
-func TestRequireIdentity(t *testing.T) {
-	_, err := RequireIdentity(context.Background())
-	assert.Error(t, err)
-	assert.True(t, errors.Is(err, ErrNoIdentity))
-
-	ctx := WithIdentity(context.Background(), NewIdentity("u-1", "user", "Alice"))
-	got, err := RequireIdentity(ctx)
-	assert.NoError(t, err)
-	assert.Equal(t, "u-1", got.ID())
-}
-
-func TestWithIdentityNilIdentity(t *testing.T) {
-	base := context.Background()
-	ctx := WithIdentity(base, nil)
-
-	_, ok := CurrentIdentity(ctx)
-	assert.False(t, ok)
+	typed, ok := PrincipalFromContextAs[Principal](ctx)
+	assert.True(t, ok)
+	assert.Equal(t, principal, typed)
 }

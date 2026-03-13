@@ -11,7 +11,6 @@ tool (
 
 require (
 	github.com/Masterminds/semver/v3 v3.4.0
-	github.com/aarondl/authboss/v3 v3.5.3
 	github.com/casbin/casbin/v3 v3.10.0
 	github.com/danielgtaylor/huma/v2 v2.37.2
 	github.com/fsnotify/fsnotify v1.9.0

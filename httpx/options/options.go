@@ -11,6 +11,7 @@ import (
 	"github.com/DaiYuANg/arcgo/httpx/adapter"
 	"github.com/go-playground/validator/v10"
 	"github.com/samber/lo"
+	"github.com/samber/mo"
 )
 
 // ServerOptions collects higher-level server construction settings.
@@ -144,19 +145,14 @@ func (o *ServerOptions) Build() []httpx.ServerOption {
 		httpx.WithPrintRoutes(o.PrintRoutes),
 	}
 
-	if o.Adapter != nil {
-		opts = append(opts, httpx.WithAdapter(o.Adapter))
+	conditionalOpts := []mo.Option[httpx.ServerOption]{
+		someWhen(o.Adapter != nil, httpx.WithAdapter(o.Adapter)),
+		someWhen(o.BasePath != "", httpx.WithBasePath(o.BasePath)),
+		validationBuildOption(o),
 	}
-
-	if o.BasePath != "" {
-		opts = append(opts, httpx.WithBasePath(o.BasePath))
-	}
-
-	if o.Validator != nil {
-		opts = append(opts, httpx.WithValidator(o.Validator))
-	} else if o.EnableValidation {
-		opts = append(opts, httpx.WithValidation())
-	}
+	opts = append(opts, lo.FilterMap(conditionalOpts, func(opt mo.Option[httpx.ServerOption], _ int) (httpx.ServerOption, bool) {
+		return opt.Get()
+	})...)
 
 	opts = append(opts, httpx.WithOpenAPIInfo(o.HumaTitle, o.HumaVersion, o.HumaDescription))
 	opts = append(opts, httpx.WithOpenAPIDocs(o.OpenAPIDocsEnabled))
@@ -249,10 +245,7 @@ func WithContextDeadline(deadline time.Time) ContextOption {
 // WithContextValue configures related behavior.
 func WithContextValue(key string, value any) ContextOption {
 	return func(o *ContextOptions) {
-		if o.ValueKeys == nil {
-			o.ValueKeys = make(map[contextValueKey]any)
-		}
-		o.ValueKeys[contextValueKey(key)] = value
+		ensureContextValues(o)[contextValueKey(key)] = value
 	}
 }
 
@@ -269,18 +262,39 @@ func (o *ContextOptions) Build() (context.Context, context.CancelFunc) {
 		ctx, cancel = context.WithTimeout(context.Background(), o.Timeout)
 	}
 
-	for k, v := range o.ValueKeys {
-		ctx = context.WithValue(ctx, k, v)
-	}
+	lo.ForEach(lo.Entries(o.ValueKeys), func(entry lo.Entry[contextValueKey, any], _ int) {
+		ctx = context.WithValue(ctx, entry.Key, entry.Value)
+	})
 
 	return ctx, cancel
 }
 
 // WithContextValueOpt mutates a ContextOptions value directly.
 func WithContextValueOpt(o *ContextOptions, key string, value any) *ContextOptions {
+	ensureContextValues(o)[contextValueKey(key)] = value
+	return o
+}
+
+func validationBuildOption(o *ServerOptions) mo.Option[httpx.ServerOption] {
+	if o.Validator != nil {
+		return mo.Some(httpx.WithValidator(o.Validator))
+	}
+	if o.EnableValidation {
+		return mo.Some(httpx.WithValidation())
+	}
+	return mo.None[httpx.ServerOption]()
+}
+
+func someWhen[T any](enabled bool, value T) mo.Option[T] {
+	if enabled {
+		return mo.Some(value)
+	}
+	return mo.None[T]()
+}
+
+func ensureContextValues(o *ContextOptions) map[contextValueKey]any {
 	if o.ValueKeys == nil {
 		o.ValueKeys = make(map[contextValueKey]any)
 	}
-	o.ValueKeys[contextValueKey(key)] = value
-	return o
+	return o.ValueKeys
 }
