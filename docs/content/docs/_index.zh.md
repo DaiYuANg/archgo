@@ -19,7 +19,7 @@ go get github.com/DaiYuANg/arcgo/{package}
 
 | 包 | 作用 | 描述 |
 | --- | --- | --- |
-| [authx](./authx) | 认证与授权 | 基于 Authboss + Casbin 的 Opinionated 安全抽象层 |
+| [authx](./authx) | 认证与授权 | 多场景可扩展的认证与鉴权抽象层 |
 | [clientx](./clientx) | 协议客户端 | 协议导向客户端（`http/tcp/udp`）+ 共享工程约束 |
 | [collectionx](./collectionx) | 数据结构 | 泛型集合与并发安全结构 |
 | [configx](./configx) | 配置管理 | 分层配置加载与校验 |
@@ -44,7 +44,7 @@ go get github.com/DaiYuANg/arcgo/{package}
 ## 如何选择
 
 - 需要容器/数据辅助：从 `collectionx` 开始
-- 需要基于 Authboss + Casbin 的认证/授权抽象：从 `authx` 开始
+- 需要可扩展的认证/鉴权抽象：从 `authx` 开始
 - 需要协议导向客户端（`http/tcp/udp`）并共享工程约束：从 `clientx` 开始
 - 需要从 `.env` + 文件 + 环境变量加载配置：从 `configx` 开始
 - 需要进程内带类型负载的 pub/sub：从 `eventx` 开始

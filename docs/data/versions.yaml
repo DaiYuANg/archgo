@@ -1,52 +1,9 @@
 # 版本文档配置
 # 此文件定义了文档的版本列表
-# 版本按时间倒序排列，第一个为当前版本
+# 当前阶段仅维护一个主线版本（未对外发布历史版本）
 
 versions:
-  # 当前版本（最新版本）
-  - name: "v0.2.2"
-    release: "v0.2.2"
+  - name: "v0.3.0"
+    release: "v0.3.0"
     path: "/docs"
     current: true
-
-
-  # 历史版本
-  - name: "v0.2.1"
-    release: "v0.2.1"
-    path: "/versioned/v0.2.1/docs"
-    current: false
-
-
-  # 历史版本
-  - name: "v0.2.0"
-    release: "v0.2.0"
-    path: "/versioned/v0.2.0/docs"
-    current: false
-
-
-  # 历史版本
-  - name: "v0.1.0"
-    release: "v0.1.0"
-    path: "/versioned/v0.1.0/docs"
-    current: false
-
-
-  # 历史版本
-  - name: "v0.0.3"
-    release: "v0.0.3"
-    path: "/versioned/v0.0.3/docs"
-    current: false
-
-
-  # 历史版本
-  - name: "v0.0.2"
-    release: "v0.0.2"
-    path: "/versioned/v0.0.2/docs"
-    current: false
-
-
-  # 历史版本
-  - name: "v0.0.1"
-    release: "v0.0.1"
-    path: "/versioned/v0.0.1/docs"
-    current: false

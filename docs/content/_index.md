@@ -26,7 +26,7 @@ go get github.com/DaiYuANg/arcgo/{package}
 ## Package Overview
 
 {{< cards >}}
-  {{< card link="/docs/authx" title="authx" subtitle="Authentication & Authorization based on Authboss + Casbin" icon="lock-closed" >}}
+  {{< card link="/docs/authx" title="authx" subtitle="Extensible authentication and authorization abstraction" icon="lock-closed" >}}
   {{< card link="/docs/collectionx" title="collectionx" subtitle="Generic collections and concurrency-safe structures" icon="collection" >}}
   {{< card link="/docs/configx" title="configx" subtitle="Hierarchical configuration loading and validation" icon="cog" >}}
   {{< card link="/docs/eventx" title="eventx" subtitle="In-process strongly typed event bus" icon="lightning-bolt" >}}

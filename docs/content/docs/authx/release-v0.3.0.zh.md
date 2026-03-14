@@ -1,38 +1,36 @@
 ---
-title: 'authx'
-linkTitle: 'authx'
-description: '多场景可扩展的认证与鉴权抽象层'
-weight: 1
+title: 'authx v0.3.0（重构版）'
+linkTitle: 'release v0.3.0'
+description: 'authx 新版核心建模与 HTTP 集成说明'
+weight: 2
 ---
 
-## authx
+## 概览
 
-`authx` 是一个面向多场景（HTTP / gRPC / CLI）的 Go 认证与鉴权抽象库。
+`authx v0.3.0` 是一次面向“统一抽象 + 多场景扩展”的重构版本。
 
-核心原则：
+核心变化：
 
-- 认证与鉴权分离：`Check` / `Can`
-- 不绑定认证方式：JWT / 密码 / 短信验证码等都可扩展
-- 核心层保持框架无关，适配层按场景集成
+- 认证与鉴权 API 明确拆分为 `Check` 与 `Can`
+- `Engine` 不绑定具体认证方式（JWT/Session/OTP 等均可扩展）
+- `ProviderManager` 支持多种 credential 类型并行注册
+- 新增 `authx/http` 子包，覆盖 `std`/`gin`/`echo`/`fiber`
+- 新增 `RequireFast` 与 `TypedGuard`，优化热路径与类型体验
 
-## Roadmap
+## 新核心模型
 
-- 模块路线图见：[authx roadmap](./roadmap)
-- 迭代执行计划见：[authx iteration plan](./iteration-plan)
-- 新版说明见：[authx v0.3.0 release](./release-v0.3.0)
-- 全局路线图见：[ArcGo roadmap](../roadmap)
+新版核心是三层协作：
 
-## 核心 API
+- `AuthenticationProvider[C]`: 处理某一类凭证 `C`
+- `AuthenticationManager`: 负责选择并调用匹配 provider
+- `Authorizer`: 专注授权决策（与认证解耦）
 
-- `Engine`: 认证与鉴权编排入口
-- `ProviderManager`: 多 credential 类型 provider 管理器
-- `AuthenticationProvider[C]`: 认证提供者泛型抽象
-- `Authorizer`: 鉴权决策接口
-- `Check(ctx, credential)`: 认证
-- `Can(ctx, AuthorizationModel)`: 鉴权
-- `Hook`: Check/Can 前后切面扩展
+`Engine` 仅编排流程：
 
-## 快速开始（Core）
+1. `Check(ctx, credential)` 返回 `AuthenticationResult`
+2. `Can(ctx, AuthorizationModel)` 返回 `Decision`
+
+## 典型调用方式
 
 ```go
 engine := authx.NewEngine(
@@ -42,7 +40,7 @@ engine := authx.NewEngine(
                 _ context.Context,
                 in UsernamePassword,
             ) (authx.AuthenticationResult, error) {
-                // verify credential
+                // verify...
                 return authx.AuthenticationResult{
                     Principal: authx.Principal{ID: in.Username},
                 }, nil
@@ -58,24 +56,16 @@ engine := authx.NewEngine(
 )
 
 result, err := engine.Check(ctx, UsernamePassword{Username: "alice", Password: "secret"})
-if err != nil {
-    panic(err)
-}
-
 decision, err := engine.Can(ctx, authx.AuthorizationModel{
     Principal: result.Principal,
     Action:    "query",
     Resource:  "order",
 })
-if err != nil {
-    panic(err)
-}
-_ = decision
 ```
 
-## HTTP 集成
+## HTTP 集成（新增）
 
-`authx/http` 提供统一 Guard 与框架中间件：
+新增 `authx/http` 统一 Guard 层：
 
 - `authx/http/std`
 - `authx/http/gin`
@@ -87,6 +77,8 @@ _ = decision
 - `WithCredentialResolverFunc`
 - `WithAuthorizationResolverFunc`
 
+框架侧只需挂中间件：
+
 ```go
 guard := authhttp.NewGuard(
     engine,
@@ -95,27 +87,26 @@ guard := authhttp.NewGuard(
 )
 
 router.Use(authstd.Require(guard))
-// 高性能路径：router.Use(authstd.RequireFast(guard))
+// 或：router.Use(authstd.RequireFast(guard))
 ```
+
+## 性能与可维护性更新
+
+- 新增 core benchmark（含并行场景）
+- 为 `std/gin/echo/fiber` 各自新增 middleware benchmark
+- 热路径减少请求期对象构造，`RequireFast` 进一步降低分配
+- `authx` 目录内 Go 文件按可维护性拆分，避免超长单文件
 
 ## 示例
 
-- `authx/http/examples/shared`
-- `authx/http/examples/jwt`
-- `authx/http/examples/std`
-- `authx/http/examples/gin`
-- `authx/http/examples/echo`
-- `authx/http/examples/fiber`
+- 通用示例：`authx/http/examples/shared`
+- JWT 示例：`authx/http/examples/jwt`
+- 框架示例：`authx/http/examples/std|gin|echo|fiber`
 
-## 测试与基准
+## 基准命令
 
 ```bash
-go test ./authx/...
-
-# core
 go test ./authx -run ^$ -bench BenchmarkEngine -benchmem
-
-# middleware
 go test ./authx/http/std -run ^$ -bench BenchmarkRequire -benchmem
 go test ./authx/http/gin -run ^$ -bench BenchmarkRequire -benchmem
 go test ./authx/http/echo -run ^$ -bench BenchmarkRequire -benchmem

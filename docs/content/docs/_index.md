@@ -19,7 +19,7 @@ go get github.com/DaiYuANg/arcgo/{package}
 
 | Package | Purpose | Description |
 | --- | --- | --- |
-| [authx](./authx) | Authentication & Authorization | Opinionated security layer based on Authboss + Casbin |
+| [authx](./authx) | Authentication & Authorization | Extensible abstraction for multi-scenario authentication and authorization |
 | [clientx](./clientx) | Protocol Clients | Protocol-oriented clients (`http/tcp/udp`) with shared engineering conventions |
 | [collectionx](./collectionx) | Data Structures | Generic collections and concurrency-safe structures |
 | [configx](./configx) | Configuration Management | Hierarchical configuration loading and validation |
@@ -44,7 +44,7 @@ go get github.com/DaiYuANg/arcgo/{package}
 ## How to Choose
 
 - Need container/data utilities: Start with `collectionx`
-- Need authentication/authorization abstraction based on Authboss + Casbin: Start with `authx`
+- Need an extensible authentication/authorization abstraction: Start with `authx`
 - Need protocol-oriented clients (`http/tcp/udp`) with shared conventions: Start with `clientx`
 - Need configuration loading from `.env` + files + environment variables: Start with `configx`
 - Need in-process typed pub/sub: Start with `eventx`

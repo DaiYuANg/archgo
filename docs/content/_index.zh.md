@@ -26,7 +26,7 @@ go get github.com/DaiYuANg/arcgo/{package}
 ## 包概览
 
 {{< cards >}}
-  {{< card link="/docs/authx" title="authx" subtitle="基于 Authboss + Casbin 的认证与授权" icon="lock-closed" >}}
+  {{< card link="/docs/authx" title="authx" subtitle="多场景可扩展的认证与鉴权抽象" icon="lock-closed" >}}
   {{< card link="/docs/collectionx" title="collectionx" subtitle="泛型集合与并发安全结构" icon="collection" >}}
   {{< card link="/docs/configx" title="configx" subtitle="分层配置加载与校验" icon="cog" >}}
   {{< card link="/docs/eventx" title="eventx" subtitle="进程内强类型事件总线" icon="lightning-bolt" >}}
