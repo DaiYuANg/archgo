@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"os"
 
+	"github.com/DaiYuANg/arcgo/collectionx"
 	"go.uber.org/fx"
 	"go.uber.org/fx/fxevent"
 	"go.uber.org/zap"
@@ -24,15 +25,16 @@ type SupportedFxLoggerType interface {
 // 3. 先 ValidateApp
 // 4. 校验通过后再 fx.New
 func CreateApplicationContainer[L SupportedFxLoggerType](modules ...fx.Option) (*fx.App, error) {
-	opts := make([]fx.Option, 0, len(modules)+1)
-	opts = append(opts, loggerOption[L]())
-	opts = append(opts, modules...)
+	opts := collectionx.NewList[fx.Option]()
+	opts.Add(loggerOption[L]())
+	opts.MergeSlice(modules)
+	built := opts.Values()
 
-	if err := fx.ValidateApp(opts...); err != nil {
+	if err := fx.ValidateApp(built...); err != nil {
 		return nil, fmt.Errorf("validate fx app failed: %w", err)
 	}
 
-	app := fx.New(opts...)
+	app := fx.New(built...)
 	return app, nil
 }
 
