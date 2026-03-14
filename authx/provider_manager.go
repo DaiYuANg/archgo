@@ -4,34 +4,38 @@ import (
 	"context"
 	"fmt"
 	"reflect"
-
-	"github.com/DaiYuANg/arcgo/collectionx"
-	"github.com/samber/lo"
+	"sync"
 )
 
 // ProviderManager routes authentication credential to provider by credential concrete type.
 type ProviderManager struct {
-	providers collectionx.ConcurrentMap[reflect.Type, AuthenticationProvider]
+	mu        sync.RWMutex
+	providers map[reflect.Type]AuthenticationProvider
 }
 
 func NewProviderManager(providers ...AuthenticationProvider) *ProviderManager {
-	manager := &ProviderManager{providers: collectionx.NewConcurrentMap[reflect.Type, AuthenticationProvider]()}
+	manager := &ProviderManager{providers: make(map[reflect.Type]AuthenticationProvider)}
 	manager.Register(providers...)
 	return manager
 }
 
 func (manager *ProviderManager) Register(providers ...AuthenticationProvider) {
-	if manager == nil || manager.providers == nil {
+	if manager == nil || len(providers) == 0 {
 		return
 	}
 
-	validProviders := lo.Filter(providers, func(provider AuthenticationProvider, _ int) bool {
-		return provider != nil && provider.CredentialType() != nil
-	})
-
-	lo.ForEach(validProviders, func(provider AuthenticationProvider, _ int) {
-		manager.providers.Set(provider.CredentialType(), provider)
-	})
+	manager.mu.Lock()
+	defer manager.mu.Unlock()
+	for _, provider := range providers {
+		if provider == nil {
+			continue
+		}
+		credentialType := provider.CredentialType()
+		if credentialType == nil {
+			continue
+		}
+		manager.providers[credentialType] = provider
+	}
 }
 
 func (manager *ProviderManager) Authenticate(
@@ -41,13 +45,16 @@ func (manager *ProviderManager) Authenticate(
 	if credential == nil {
 		return AuthenticationResult{}, ErrInvalidAuthenticationCredential
 	}
-	if manager == nil || manager.providers == nil {
+	if manager == nil {
 		return AuthenticationResult{}, ErrAuthenticationManagerNotConfigured
 	}
 
-	provider, ok := manager.providers.GetOption(reflect.TypeOf(credential)).Get()
+	credentialType := reflect.TypeOf(credential)
+	manager.mu.RLock()
+	provider, ok := manager.providers[credentialType]
+	manager.mu.RUnlock()
 	if !ok {
-		return AuthenticationResult{}, fmt.Errorf("%w: %v", ErrAuthenticationProviderNotFound, reflect.TypeOf(credential))
+		return AuthenticationResult{}, fmt.Errorf("%w: %v", ErrAuthenticationProviderNotFound, credentialType)
 	}
 
 	result, err := provider.AuthenticateAny(ctx, credential)

@@ -1,0 +1,144 @@
+//go:build !no_gin
+
+package gin
+
+import (
+	"net/http"
+
+	"github.com/DaiYuANg/arcgo/authx"
+	authhttp "github.com/DaiYuANg/arcgo/authx/http"
+	"github.com/gin-gonic/gin"
+)
+
+type Option func(*config)
+
+type config struct {
+	failureHandler func(*gin.Context, int, string)
+}
+
+func defaultConfig() config {
+	return config{
+		failureHandler: func(c *gin.Context, status int, message string) {
+			c.AbortWithStatusJSON(status, gin.H{"error": message})
+		},
+	}
+}
+
+func WithFailureHandler(handler func(*gin.Context, int, string)) Option {
+	return func(cfg *config) {
+		if handler != nil {
+			cfg.failureHandler = handler
+		}
+	}
+}
+
+// Require runs Check + Can and aborts request automatically when denied.
+func Require(guard *authhttp.Guard, opts ...Option) gin.HandlerFunc {
+	return requireWithMode(guard, false, opts...)
+}
+
+// RequireFast runs Check + Can with fast request extraction (less copying).
+func RequireFast(guard *authhttp.Guard, opts ...Option) gin.HandlerFunc {
+	return requireWithMode(guard, true, opts...)
+}
+
+func requireWithMode(guard *authhttp.Guard, fast bool, opts ...Option) gin.HandlerFunc {
+	cfg := defaultConfig()
+	authhttp.ApplyOptions(&cfg, opts...)
+	extract := requestInfoFromGin
+	if fast {
+		extract = requestInfoFromGinFast
+	}
+
+	return func(c *gin.Context) {
+		if guard == nil {
+			cfg.failureHandler(c, http.StatusInternalServerError, "internal_error")
+			return
+		}
+
+		req := c.Request
+		reqInfo := extract(c, req)
+
+		result, decision, err := guard.Require(req.Context(), reqInfo)
+		if err != nil {
+			cfg.failureHandler(c, authhttp.StatusCodeFromError(err), authhttp.ErrorMessage(err))
+			return
+		}
+		if !decision.Allowed {
+			cfg.failureHandler(c, http.StatusForbidden, authhttp.DeniedMessage(decision))
+			return
+		}
+
+		c.Request = req.WithContext(authx.WithPrincipal(req.Context(), result.Principal))
+		c.Next()
+	}
+}
+
+func requestInfoFromGinFast(c *gin.Context, req *http.Request) authhttp.RequestInfo {
+	path := ""
+	method := ""
+	pattern := c.FullPath()
+	if req != nil {
+		method = req.Method
+		if req.URL != nil {
+			path = req.URL.Path
+		}
+	}
+	if pattern == "" {
+		pattern = path
+	}
+
+	return authhttp.RequestInfo{
+		Method:       method,
+		Path:         path,
+		RoutePattern: pattern,
+		Headers:      nil,
+		Query:        nil,
+		PathParams:   nil,
+		Request:      req,
+		Native:       c,
+	}
+}
+
+func requestInfoFromGin(c *gin.Context, req *http.Request) authhttp.RequestInfo {
+	path := ""
+	method := ""
+	pattern := c.FullPath()
+	if req != nil {
+		method = req.Method
+		if req.URL != nil {
+			path = req.URL.Path
+		}
+	}
+	if pattern == "" {
+		pattern = path
+	}
+
+	params := map[string]string(nil)
+	if len(c.Params) > 0 {
+		params = make(map[string]string, len(c.Params))
+		for _, param := range c.Params {
+			params[param.Key] = param.Value
+		}
+	}
+
+	var headers http.Header
+	var query map[string][]string
+	if req != nil {
+		headers = req.Header.Clone()
+		if req.URL != nil && req.URL.RawQuery != "" {
+			query = req.URL.Query()
+		}
+	}
+
+	return authhttp.RequestInfo{
+		Method:       method,
+		Path:         path,
+		RoutePattern: pattern,
+		Headers:      headers,
+		Query:        query,
+		PathParams:   params,
+		Request:      req,
+		Native:       c,
+	}
+}

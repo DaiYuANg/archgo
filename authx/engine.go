@@ -2,65 +2,55 @@ package authx
 
 import (
 	"context"
-
-	"github.com/DaiYuANg/arcgo/collectionx"
-	"github.com/samber/lo"
-)
-
-const (
-	dependencyAuthnKey = "authn"
-	dependencyAuthzKey = "authz"
+	"sync"
 )
 
 // Engine separates authentication (Check) and authorization (Can).
 type Engine struct {
-	deps  collectionx.ConcurrentMap[string, any]
-	hooks collectionx.ConcurrentList[Hook]
+	mu    sync.RWMutex
+	authn AuthenticationManager
+	authz Authorizer
+	hooks []Hook
 }
 
 func NewEngine(opts ...EngineOption) *Engine {
-	engine := &Engine{
-		deps:  collectionx.NewConcurrentMap[string, any](),
-		hooks: collectionx.NewConcurrentList[Hook](),
-	}
-	lo.ForEach(opts, func(opt EngineOption, _ int) {
+	engine := &Engine{}
+	for _, opt := range opts {
 		if opt != nil {
 			opt(engine)
 		}
-	})
+	}
 	return engine
 }
 
 func (engine *Engine) SetAuthenticationManager(manager AuthenticationManager) {
-	if engine == nil || engine.deps == nil {
+	if engine == nil {
 		return
 	}
-	if manager == nil {
-		_ = engine.deps.Delete(dependencyAuthnKey)
-		return
-	}
-	engine.deps.Set(dependencyAuthnKey, manager)
+	engine.mu.Lock()
+	engine.authn = manager
+	engine.mu.Unlock()
 }
 
 func (engine *Engine) SetAuthorizer(authorizer Authorizer) {
-	if engine == nil || engine.deps == nil {
+	if engine == nil {
 		return
 	}
-	if authorizer == nil {
-		_ = engine.deps.Delete(dependencyAuthzKey)
-		return
-	}
-	engine.deps.Set(dependencyAuthzKey, authorizer)
+	engine.mu.Lock()
+	engine.authz = authorizer
+	engine.mu.Unlock()
 }
 
 func (engine *Engine) AddHook(hook Hook) {
 	if engine == nil || hook == nil {
 		return
 	}
-	if engine.hooks == nil {
-		engine.hooks = collectionx.NewConcurrentList[Hook]()
-	}
-	engine.hooks.Add(hook)
+	engine.mu.Lock()
+	next := make([]Hook, len(engine.hooks)+1)
+	copy(next, engine.hooks)
+	next[len(engine.hooks)] = hook
+	engine.hooks = next
+	engine.mu.Unlock()
 }
 
 // Check authenticates credential and returns principal.
@@ -74,16 +64,16 @@ func (engine *Engine) Check(ctx context.Context, credential any) (Authentication
 		return AuthenticationResult{}, ErrAuthenticationManagerNotConfigured
 	}
 
-	if err := firstHookError(hooks, func(hook Hook) error {
-		return hook.BeforeCheck(ctx, credential)
-	}); err != nil {
-		return AuthenticationResult{}, err
+	for _, hook := range hooks {
+		if err := hook.BeforeCheck(ctx, credential); err != nil {
+			return AuthenticationResult{}, err
+		}
 	}
 
 	result, err := authn.Authenticate(ctx, credential)
-	lo.ForEach(hooks, func(hook Hook, _ int) {
+	for _, hook := range hooks {
 		hook.AfterCheck(ctx, credential, result, err)
-	})
+	}
 	if err != nil {
 		return AuthenticationResult{}, err
 	}
@@ -101,16 +91,16 @@ func (engine *Engine) Can(ctx context.Context, input AuthorizationModel) (Decisi
 		return Decision{}, ErrAuthorizerNotConfigured
 	}
 
-	if err := firstHookError(hooks, func(hook Hook) error {
-		return hook.BeforeCan(ctx, input)
-	}); err != nil {
-		return Decision{}, err
+	for _, hook := range hooks {
+		if err := hook.BeforeCan(ctx, input); err != nil {
+			return Decision{}, err
+		}
 	}
 
 	decision, err := authorizer.Authorize(ctx, input)
-	lo.ForEach(hooks, func(hook Hook, _ int) {
+	for _, hook := range hooks {
 		hook.AfterCan(ctx, input, decision, err)
-	})
+	}
 	if err != nil {
 		return Decision{}, err
 	}
@@ -122,17 +112,10 @@ func (engine *Engine) snapshotCheckDependencies() (AuthenticationManager, []Hook
 		return nil, nil
 	}
 
-	var authn AuthenticationManager
-	if engine.deps != nil {
-		if value, ok := engine.deps.Get(dependencyAuthnKey); ok {
-			authn, _ = value.(AuthenticationManager)
-		}
-	}
-
-	hooks := []Hook(nil)
-	if engine.hooks != nil {
-		hooks = engine.hooks.Values()
-	}
+	engine.mu.RLock()
+	authn := engine.authn
+	hooks := engine.hooks
+	engine.mu.RUnlock()
 	return authn, hooks
 }
 
@@ -141,17 +124,10 @@ func (engine *Engine) snapshotCanDependencies() (Authorizer, []Hook) {
 		return nil, nil
 	}
 
-	var authorizer Authorizer
-	if engine.deps != nil {
-		if value, ok := engine.deps.Get(dependencyAuthzKey); ok {
-			authorizer, _ = value.(Authorizer)
-		}
-	}
-
-	hooks := []Hook(nil)
-	if engine.hooks != nil {
-		hooks = engine.hooks.Values()
-	}
+	engine.mu.RLock()
+	authorizer := engine.authz
+	hooks := engine.hooks
+	engine.mu.RUnlock()
 	return authorizer, hooks
 }
 
@@ -161,18 +137,6 @@ func validateAuthorizationModel(input AuthorizationModel) error {
 	}
 	if input.Principal == nil {
 		return ErrInvalidAuthorizationModel
-	}
-	return nil
-}
-
-func firstHookError(hooks []Hook, fn func(Hook) error) error {
-	var firstErr error
-	_, found := lo.Find(hooks, func(hook Hook) bool {
-		firstErr = fn(hook)
-		return firstErr != nil
-	})
-	if found {
-		return firstErr
 	}
 	return nil
 }
