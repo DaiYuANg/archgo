@@ -31,7 +31,7 @@ A reusable backend scaffold example with:
 - `internal/service/book`: book service
 - `internal/service/user`: user service
 - `internal/service/role`: role service
-- `internal/repository/core`: bun store bootstrap + generic base repository
+- `internal/repository/core`: bun store bootstrap (schema + seed)
 - `internal/repository/auth`: auth + authorization repositories
 - `internal/repository/book`: book repository
 - `internal/repository/user`: user repository
@@ -43,7 +43,7 @@ A reusable backend scaffold example with:
 - `internal/entity`: database entities
 - `internal/authn`: authx guard/middleware and auth resolver mapping
 - `internal/config`: configx-based app config
-- `pkg/appfx`: reusable fx start/stop bootstrap helper
+- `bunx`: shared bun extension package (Open/Wrap + slog query hook + generic BaseRepository)
 
 ## Run
 
@@ -175,3 +175,4 @@ curl -X POST http://127.0.0.1:18080/api/v1/users \
 - sqlite: `RBAC_DB_DRIVER=sqlite`, `RBAC_DB_DSN=file:rbac_basic.db?cache=shared`
 - mysql: `RBAC_DB_DRIVER=mysql`, `RBAC_DB_DSN=user:pass@tcp(127.0.0.1:3306)/rbac?parseTime=true`
 - postgres: `RBAC_DB_DRIVER=postgres`, `RBAC_DB_DSN=postgres://user:pass@127.0.0.1:5432/rbac?sslmode=disable`
+

@@ -2,49 +2,60 @@ package core
 
 import (
 	"context"
-	"database/sql"
-	"fmt"
 	"log/slog"
 
+	"github.com/DaiYuANg/arcgo/bunx"
 	"github.com/DaiYuANg/arcgo/examples/rbac_backend/internal/config"
 	"github.com/DaiYuANg/arcgo/examples/rbac_backend/internal/entity"
 	"github.com/DaiYuANg/arcgo/observabilityx"
 	"github.com/samber/lo"
 	"github.com/uptrace/bun"
-	"github.com/uptrace/bun/dialect/mysqldialect"
-	"github.com/uptrace/bun/dialect/pgdialect"
-	"github.com/uptrace/bun/dialect/sqlitedialect"
-	"github.com/uptrace/bun/driver/pgdriver"
-	"github.com/uptrace/bun/driver/sqliteshim"
 	"go.uber.org/fx"
-
-	_ "github.com/go-sql-driver/mysql"
 )
 
 type Store struct {
 	db     *bun.DB
 	obs    observabilityx.Observability
 	logger *slog.Logger
+	ownDB  bool
 }
 
-func NewStore(
-	lc fx.Lifecycle,
-	cfg config.AppConfig,
-	obs observabilityx.Observability,
-	logger *slog.Logger,
-) (*Store, error) {
-	db, err := openBunDB(cfg)
-	if err != nil {
-		return nil, err
+type storeDeps struct {
+	fx.In
+
+	Lifecycle  fx.Lifecycle
+	Config     config.AppConfig
+	Obs        observabilityx.Observability
+	Logger     *slog.Logger
+	ExternalDB *bun.DB `optional:"true"`
+}
+
+func NewStore(deps storeDeps) (*Store, error) {
+	var (
+		db    *bun.DB
+		err   error
+		ownDB bool
+	)
+
+	if deps.ExternalDB != nil {
+		db = deps.ExternalDB
+		ownDB = false
+	} else {
+		db, err = openBunDB(deps.Config, deps.Logger)
+		if err != nil {
+			return nil, err
+		}
+		ownDB = true
 	}
 
 	s := &Store{
 		db:     db,
-		obs:    obs,
-		logger: logger,
+		obs:    deps.Obs,
+		logger: deps.Logger,
+		ownDB:  ownDB,
 	}
 
-	lc.Append(fx.Hook{
+	deps.Lifecycle.Append(fx.Hook{
 		OnStart: func(ctx context.Context) error {
 			if err := s.initSchema(ctx); err != nil {
 				return err
@@ -69,30 +80,27 @@ func (s *Store) DB() *bun.DB {
 	return s.db
 }
 
-func openBunDB(cfg config.AppConfig) (*bun.DB, error) {
-	switch cfg.DBDriver() {
-	case "sqlite":
-		sqlDB, err := sql.Open(sqliteshim.ShimName, cfg.DBDSN())
-		if err != nil {
-			return nil, fmt.Errorf("open sqlite failed: %w", err)
-		}
-		return bun.NewDB(sqlDB, sqlitedialect.New()), nil
-	case "mysql":
-		sqlDB, err := sql.Open("mysql", cfg.DBDSN())
-		if err != nil {
-			return nil, fmt.Errorf("open mysql failed: %w", err)
-		}
-		return bun.NewDB(sqlDB, mysqldialect.New()), nil
-	case "postgres":
-		sqlDB := sql.OpenDB(pgdriver.NewConnector(pgdriver.WithDSN(cfg.DBDSN())))
-		return bun.NewDB(sqlDB, pgdialect.New()), nil
-	default:
-		return nil, fmt.Errorf("unsupported db driver: %s", cfg.DBDriver())
+func (s *Store) Logger() *slog.Logger {
+	if s == nil {
+		return nil
 	}
+	return s.logger
+}
+
+func openBunDB(cfg config.AppConfig, logger *slog.Logger) (*bun.DB, error) {
+	db, err := bunx.Open(
+		cfg.DBDriver(),
+		cfg.DBDSN(),
+		bunx.WithLogger(logger),
+	)
+	if err != nil {
+		return nil, err
+	}
+	return db, nil
 }
 
 func (s *Store) close() error {
-	if s == nil || s.db == nil {
+	if s == nil || s.db == nil || !s.ownDB {
 		return nil
 	}
 	return s.db.Close()

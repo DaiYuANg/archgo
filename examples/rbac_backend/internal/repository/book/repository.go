@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/DaiYuANg/arcgo/bunx"
 	"github.com/DaiYuANg/arcgo/examples/rbac_backend/internal/entity"
 	repocore "github.com/DaiYuANg/arcgo/examples/rbac_backend/internal/repository/core"
 )
@@ -15,11 +16,11 @@ type Repository interface {
 }
 
 type bunRepository struct {
-	base repocore.BaseRepository[entity.BookModel]
+	base bunx.BaseRepository[entity.BookModel]
 }
 
 func NewRepository(store *repocore.Store) Repository {
-	return &bunRepository{base: repocore.NewBaseRepository[entity.BookModel](store.DB())}
+	return &bunRepository{base: bunx.NewBaseRepository[entity.BookModel](store.DB(), store.Logger())}
 }
 
 func (r *bunRepository) ListBooks(ctx context.Context) ([]entity.BookModel, error) {

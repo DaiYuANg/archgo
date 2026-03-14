@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/DaiYuANg/arcgo/bunx"
 	"github.com/DaiYuANg/arcgo/examples/rbac_backend/internal/entity"
 	repocore "github.com/DaiYuANg/arcgo/examples/rbac_backend/internal/repository/core"
 	"github.com/uptrace/bun"
@@ -20,13 +21,13 @@ type Repository interface {
 }
 
 type bunRepository struct {
-	base repocore.BaseRepository[entity.RoleModel]
+	base bunx.BaseRepository[entity.RoleModel]
 	db   *bun.DB
 }
 
 func NewRepository(store *repocore.Store) Repository {
 	return &bunRepository{
-		base: repocore.NewBaseRepository[entity.RoleModel](store.DB()),
+		base: bunx.NewBaseRepository[entity.RoleModel](store.DB(), store.Logger()),
 		db:   store.DB(),
 	}
 }

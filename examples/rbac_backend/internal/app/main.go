@@ -3,7 +3,6 @@ package app
 import (
 	"log/slog"
 
-	"github.com/DaiYuANg/arcgo/examples/rbac_backend/pkg/appfx"
 	"go.uber.org/fx"
 	"go.uber.org/fx/fxevent"
 )
@@ -17,5 +16,6 @@ func Run() error {
 		}),
 	)
 
-	return appfx.Run(fxApp)
+	fxApp.Run()
+	return nil
 }
