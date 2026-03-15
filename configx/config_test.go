@@ -105,6 +105,7 @@ func TestGetters(t *testing.T) {
 			"app.timeout": "5s",
 			"app.tags":    []string{"x", "y"},
 			"app.ratio":   0.75,
+			"app.ids":     []int{1, 2, 3},
 		}),
 	)
 	assert.NoError(t, err)
@@ -117,6 +118,8 @@ func TestGetters(t *testing.T) {
 	assert.Equal(t, 0.75, cfg.GetFloat64("app.ratio"))
 	assert.True(t, cfg.Exists("app.name"))
 	assert.False(t, cfg.Exists("missing"))
+	assert.Equal(t, int64(1234), cfg.GetInt64("app.port"))
+	assert.Equal(t, []int{1, 2, 3}, cfg.GetIntSlice("app.ids"))
 }
 
 func TestWithIgnoreDotenvError(t *testing.T) {

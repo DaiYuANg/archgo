@@ -1,0 +1,275 @@
+package configx
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"path/filepath"
+	"sync"
+	"time"
+
+	"github.com/knadh/koanf/providers/file"
+)
+
+// ChangeHandler is the signature for callbacks registered with [Watcher.OnChange].
+// cfg holds the freshly loaded config; err is non-nil when the reload failed.
+// When err is non-nil, cfg is nil and the previous config remains active.
+type ChangeHandler func(cfg *Config, err error)
+
+// Watcher manages a live-reloading *Config.
+//
+// It sets up an fsnotify watcher for every file listed in the original option
+// set. Whenever any of those files is written or recreated, the Watcher
+// performs a *full* reload (defaults → files → env) so that every source is
+// always in sync. Multiple rapid saves are collapsed into a single reload via
+// a configurable debounce window (default 100 ms).
+//
+// Typical usage:
+//
+//	w, err := configx.NewWatcher(
+//	    configx.WithFiles("config.yaml"),
+//	    configx.WithEnvPrefix("APP"),
+//	    configx.WithWatchDebounce(200*time.Millisecond),
+//	    configx.WithWatchErrHandler(func(err error) {
+//	        slog.Error("config watch error", "err", err)
+//	    }),
+//	)
+//
+//	w.OnChange(func(cfg *configx.Config, err error) {
+//	    if err == nil {
+//	        slog.Info("config reloaded", "port", cfg.GetInt("server.port"))
+//	    }
+//	})
+//
+//	ctx, cancel := context.WithCancel(context.Background())
+//	defer cancel()
+//	go w.Start(ctx)
+//
+//	// Always use w.Config() to get the latest snapshot.
+//	port := w.Config().GetInt("server.port")
+type Watcher struct {
+	// mu guards cfg.
+	mu  sync.RWMutex
+	cfg *Config
+
+	opts *Options
+
+	// subsMu guards subs.
+	subsMu sync.RWMutex
+	subs   []ChangeHandler
+
+	// providers are used *only* for change detection – actual loading is
+	// always done by a fresh call to loadConfigFromOptions.
+	providers []*file.File
+
+	// stopCh is closed by Close to signal the Start loop to exit.
+	stopCh   chan struct{}
+	stopOnce sync.Once
+}
+
+// NewWatcher builds a Watcher from the supplied options, performs the initial
+// config load, and prepares fsnotify watchers for every supported config file.
+//
+// Call [Watcher.Start] (typically in a goroutine) to begin watching.
+func NewWatcher(opts ...Option) (*Watcher, error) {
+	options := NewOptions()
+	for _, opt := range opts {
+		if opt != nil {
+			opt(options)
+		}
+	}
+	return newWatcherFromOptions(options)
+}
+
+// newWatcherFromOptions is the internal constructor shared by NewWatcher and
+// Loader.NewWatcher so that the options pointer is reused without re-applying
+// functional options a second time.
+func newWatcherFromOptions(opts *Options) (*Watcher, error) {
+	cfg, err := loadConfigFromOptions(opts)
+	if err != nil {
+		return nil, fmt.Errorf("configx: watcher initial load: %w", err)
+	}
+
+	return &Watcher{
+		cfg:       cfg,
+		opts:      opts,
+		providers: buildWatchProviders(opts.files),
+		stopCh:    make(chan struct{}),
+	}, nil
+}
+
+// Config returns the most recently successfully loaded config snapshot.
+// It is safe to call from multiple goroutines.
+func (w *Watcher) Config() *Config {
+	w.mu.RLock()
+	defer w.mu.RUnlock()
+	return w.cfg
+}
+
+// OnChange registers fn to be called after every reload attempt.
+//
+//   - On success: cfg is the new config, err is nil.
+//   - On failure: cfg is nil, err describes what went wrong; the previous
+//     config remains active (w.Config() is unchanged).
+//
+// Handlers are invoked in registration order from a single goroutine, so they
+// do not need to be goroutine-safe relative to each other.  Heavy work should
+// be dispatched to a separate goroutine to avoid blocking the reload loop.
+func (w *Watcher) OnChange(fn ChangeHandler) {
+	if fn == nil {
+		return
+	}
+	w.subsMu.Lock()
+	defer w.subsMu.Unlock()
+	w.subs = append(w.subs, fn)
+}
+
+// Start begins watching config files for changes and blocks until ctx is
+// cancelled or [Watcher.Close] is called.
+//
+// If no files are configured Start simply waits for the context to be done, so
+// it is always safe to run in a goroutine regardless of the option set.
+//
+// Errors from individual file watchers are forwarded to the handler registered
+// with [WithWatchErrHandler]; Start itself only returns a non-nil error when
+// it cannot set up an fsnotify watcher for a file.
+func (w *Watcher) Start(ctx context.Context) error {
+	// Nothing to watch – block until signalled.
+	if len(w.providers) == 0 {
+		select {
+		case <-ctx.Done():
+		case <-w.stopCh:
+		}
+		return nil
+	}
+
+	debounce := w.opts.watchDebounce
+	if debounce <= 0 {
+		debounce = 100 * time.Millisecond
+	}
+
+	// reloadCh carries a single pending reload signal. If the channel is
+	// already full (a reload is already queued) the event is dropped; the
+	// existing pending signal will trigger the reload anyway.
+	reloadCh := make(chan struct{}, 1)
+
+	trigger := func() {
+		select {
+		case reloadCh <- struct{}{}:
+		default:
+		}
+	}
+
+	// Attach fsnotify callbacks to every file provider.
+	for i, fp := range w.providers {
+		fp := fp // capture
+		if err := fp.Watch(func(_ any, err error) {
+			if err != nil {
+				w.handleErr(fmt.Errorf("configx: fsnotify error on file %d: %w", i, err))
+				return
+			}
+			trigger()
+		}); err != nil {
+			// Clean up watchers that started successfully before returning.
+			for j := 0; j < i; j++ {
+				_ = w.providers[j].Unwatch()
+			}
+			return fmt.Errorf("configx: start file watcher: %w", err)
+		}
+	}
+
+	// Debounced reload loop.
+	var (
+		timerMu sync.Mutex
+		timer   *time.Timer
+	)
+
+	resetTimer := func() {
+		timerMu.Lock()
+		defer timerMu.Unlock()
+		if timer != nil {
+			timer.Stop()
+		}
+		timer = time.AfterFunc(debounce, func() {
+			w.reload()
+		})
+	}
+
+	for {
+		select {
+		case <-ctx.Done():
+			_ = w.Close()
+			return nil
+
+		case <-w.stopCh:
+			return nil
+
+		case <-reloadCh:
+			resetTimer()
+		}
+	}
+}
+
+// Close stops all file watchers and unblocks [Watcher.Start].
+// It is idempotent and safe to call from multiple goroutines.
+func (w *Watcher) Close() error {
+	w.stopOnce.Do(func() { close(w.stopCh) })
+
+	var errs []error
+	for _, fp := range w.providers {
+		if err := fp.Unwatch(); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	return errors.Join(errs...)
+}
+
+// ─── internal helpers ─────────────────────────────────────────────────────────
+
+// reload performs a full config reload and notifies subscribers.
+func (w *Watcher) reload() {
+	newCfg, err := loadConfigFromOptions(w.opts)
+	if err != nil {
+		wrapped := fmt.Errorf("configx: reload failed: %w", err)
+		w.handleErr(wrapped)
+		w.notify(nil, wrapped)
+		return
+	}
+
+	w.mu.Lock()
+	w.cfg = newCfg
+	w.mu.Unlock()
+
+	w.notify(newCfg, nil)
+}
+
+// notify calls every registered ChangeHandler in order.
+func (w *Watcher) notify(cfg *Config, err error) {
+	w.subsMu.RLock()
+	defer w.subsMu.RUnlock()
+	for _, fn := range w.subs {
+		fn(cfg, err)
+	}
+}
+
+// handleErr forwards err to the watchErrHandler when one is configured.
+func (w *Watcher) handleErr(err error) {
+	if err == nil || w.opts.watchErrHandler == nil {
+		return
+	}
+	w.opts.watchErrHandler(err)
+}
+
+// buildWatchProviders creates one *file.File provider per supported config
+// file path. These providers are used exclusively for change detection;
+// loadConfigFromOptions handles the actual reading and parsing.
+func buildWatchProviders(paths []string) []*file.File {
+	out := make([]*file.File, 0, len(paths))
+	for _, p := range paths {
+		switch filepath.Ext(p) {
+		case ".yaml", ".yml", ".json", ".toml":
+			out = append(out, file.Provider(p))
+		}
+	}
+	return out
+}

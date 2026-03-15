@@ -10,8 +10,9 @@ import (
 	"github.com/knadh/koanf/v2"
 )
 
-// loadDotenv loads related configuration.
-// ignoreErr documents related behavior.
+// loadDotenv loads each dotenv file in order. If ignoreErr is true, missing
+// files and parse errors are silently skipped; otherwise they are returned as
+// errors.
 func loadDotenv(files []string, ignoreErr bool) error {
 	for _, f := range files {
 		if _, err := os.Stat(f); err != nil {
@@ -30,17 +31,27 @@ func loadDotenv(files []string, ignoreErr bool) error {
 			}
 			return fmt.Errorf("configx: load dotenv file %q: %w", f, err)
 		}
-
-		// Note.
 	}
 	return nil
 }
 
-// loadEnv loads related configuration.
-// prefix documents related behavior.
-// Note.
-// Note.
-func loadEnv(k *koanf.Koanf, prefix string) error {
+// loadEnv loads environment variables into k. Only variables whose names begin
+// with the given prefix (e.g. "APP_") are considered.
+//
+// The separator controls how the remainder of the key is translated into a
+// koanf path:
+//
+//   - separator "_"  (default): every underscore becomes ".", so APP_DB_HOST
+//     becomes the path "db.host".
+//   - separator "__" (double-underscore convention): only double underscores
+//     become ".", so APP_DB__HOST → "db.host" while APP_MAX_RETRY → "max_retry".
+//
+// Keys and values are always lowercased before insertion.
+func loadEnv(k *koanf.Koanf, prefix, separator string) error {
+	if separator == "" {
+		separator = defaultEnvSeparator
+	}
+
 	normalizedPrefix := normalizeEnvPrefix(prefix)
 
 	p := envProvider.Provider(".", envProvider.Opt{
@@ -49,8 +60,14 @@ func loadEnv(k *koanf.Koanf, prefix string) error {
 			keyWithoutPrefix := strings.TrimPrefix(k, normalizedPrefix)
 			keyWithoutPrefix = strings.TrimPrefix(keyWithoutPrefix, "_")
 
-			// Note.
-			key := strings.ReplaceAll(strings.ToLower(keyWithoutPrefix), "_", ".")
+			// Replace the chosen separator with "." to form a koanf path.
+			// The key is lowercased so that APP_DB_HOST and app_db_host are
+			// treated identically.
+			key := strings.ReplaceAll(
+				strings.ToLower(keyWithoutPrefix),
+				strings.ToLower(separator),
+				".",
+			)
 			return key, v
 		},
 		EnvironFunc: os.Environ,
@@ -62,6 +79,9 @@ func loadEnv(k *koanf.Koanf, prefix string) error {
 	return nil
 }
 
+// normalizeEnvPrefix ensures the prefix ends with exactly one trailing
+// underscore. An empty prefix is returned as-is so that all env vars are
+// considered.
 func normalizeEnvPrefix(prefix string) string {
 	clean := strings.TrimSpace(prefix)
 	if clean == "" {
