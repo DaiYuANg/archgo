@@ -1,6 +1,6 @@
-module valkey
+module github.com/DaiYuANg/archgo/kvx/adapter/valkey
 
-go 1.26
+go 1.26.1
 
 require github.com/valkey-io/valkey-go v1.0.72
 

@@ -65,14 +65,60 @@ func (a *Adapter) Get(ctx context.Context, key string) ([]byte, error) {
 	return []byte(val), nil
 }
 
+// MGet retrieves multiple values for the given keys.
+func (a *Adapter) MGet(ctx context.Context, keys []string) (map[string][]byte, error) {
+	vals, err := a.client.MGet(ctx, keys...).Result()
+	if err != nil {
+		return nil, err
+	}
+
+	result := make(map[string][]byte)
+	for i, v := range vals {
+		if v != nil {
+			if str, ok := v.(string); ok {
+				result[keys[i]] = []byte(str)
+			}
+		}
+	}
+	return result, nil
+}
+
 // Set sets the value for the given key.
 func (a *Adapter) Set(ctx context.Context, key string, value []byte, expiration time.Duration) error {
 	return a.client.Set(ctx, key, value, expiration).Err()
 }
 
+// MSet sets multiple key-value pairs.
+func (a *Adapter) MSet(ctx context.Context, values map[string][]byte, expiration time.Duration) error {
+	// Use MSet for atomic operation
+	ifaceValues := make(map[string]interface{}, len(values))
+	for k, v := range values {
+		ifaceValues[k] = v
+	}
+
+	if err := a.client.MSet(ctx, ifaceValues).Err(); err != nil {
+		return err
+	}
+
+	// Set expiration if needed
+	if expiration > 0 {
+		for key := range values {
+			if err := a.client.Expire(ctx, key, expiration).Err(); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
 // Delete deletes the given key.
 func (a *Adapter) Delete(ctx context.Context, key string) error {
 	return a.client.Del(ctx, key).Err()
+}
+
+// DeleteMulti deletes multiple keys.
+func (a *Adapter) DeleteMulti(ctx context.Context, keys []string) error {
+	return a.client.Del(ctx, keys...).Err()
 }
 
 // Exists checks if the key exists.
@@ -84,6 +130,19 @@ func (a *Adapter) Exists(ctx context.Context, key string) (bool, error) {
 	return n > 0, nil
 }
 
+// ExistsMulti checks if multiple keys exist.
+func (a *Adapter) ExistsMulti(ctx context.Context, keys []string) (map[string]bool, error) {
+	results := make(map[string]bool, len(keys))
+	for _, key := range keys {
+		exists, err := a.Exists(ctx, key)
+		if err != nil {
+			return nil, err
+		}
+		results[key] = exists
+	}
+	return results, nil
+}
+
 // Expire sets the expiration for the given key.
 func (a *Adapter) Expire(ctx context.Context, key string, expiration time.Duration) error {
 	return a.client.Expire(ctx, key, expiration).Err()
@@ -92,6 +151,16 @@ func (a *Adapter) Expire(ctx context.Context, key string, expiration time.Durati
 // TTL gets the TTL for the given key.
 func (a *Adapter) TTL(ctx context.Context, key string) (time.Duration, error) {
 	return a.client.TTL(ctx, key).Result()
+}
+
+// Scan iterates over keys matching the pattern.
+func (a *Adapter) Scan(ctx context.Context, pattern string, cursor uint64, count int64) ([]string, uint64, error) {
+	return a.client.Scan(ctx, cursor, pattern, count).Result()
+}
+
+// Keys returns all keys matching the pattern.
+func (a *Adapter) Keys(ctx context.Context, pattern string) ([]string, error) {
+	return a.client.Keys(ctx, pattern).Result()
 }
 
 // ============== Hash Interface ==============
@@ -108,6 +177,24 @@ func (a *Adapter) HGet(ctx context.Context, key string, field string) ([]byte, e
 	return []byte(val), nil
 }
 
+// HMGet gets multiple fields from a hash.
+func (a *Adapter) HMGet(ctx context.Context, key string, fields []string) (map[string][]byte, error) {
+	vals, err := a.client.HMGet(ctx, key, fields...).Result()
+	if err != nil {
+		return nil, err
+	}
+
+	result := make(map[string][]byte)
+	for i, v := range vals {
+		if v != nil {
+			if str, ok := v.(string); ok {
+				result[fields[i]] = []byte(str)
+			}
+		}
+	}
+	return result, nil
+}
+
 // HSet sets fields in a hash.
 func (a *Adapter) HSet(ctx context.Context, key string, values map[string][]byte) error {
 	// Convert map[string][]byte to map[string]interface{}
@@ -116,6 +203,15 @@ func (a *Adapter) HSet(ctx context.Context, key string, values map[string][]byte
 		ifaceValues[k] = v
 	}
 	return a.client.HSet(ctx, key, ifaceValues).Err()
+}
+
+// HMSet sets multiple fields in a hash.
+func (a *Adapter) HMSet(ctx context.Context, key string, values map[string][]byte) error {
+	ifaceValues := make(map[string]interface{}, len(values))
+	for k, v := range values {
+		ifaceValues[k] = v
+	}
+	return a.client.HMSet(ctx, key, ifaceValues).Err()
 }
 
 // HGetAll gets all fields and values from a hash.
@@ -164,6 +260,11 @@ func (a *Adapter) HVals(ctx context.Context, key string) ([][]byte, error) {
 // HLen gets the number of fields in a hash.
 func (a *Adapter) HLen(ctx context.Context, key string) (int64, error) {
 	return a.client.HLen(ctx, key).Result()
+}
+
+// HIncrBy increments a field by the given value.
+func (a *Adapter) HIncrBy(ctx context.Context, key string, field string, increment int64) (int64, error) {
+	return a.client.HIncrBy(ctx, key, field, increment).Result()
 }
 
 // ============== PubSub Interface ==============
@@ -270,9 +371,59 @@ func (a *Adapter) XRead(ctx context.Context, key string, start string, count int
 	return entries, nil
 }
 
+// XReadMultiple reads entries from multiple streams.
+func (a *Adapter) XReadMultiple(ctx context.Context, streams map[string]string, count int64, block time.Duration) (map[string][]kvx.StreamEntry, error) {
+	streamKeys := make([]string, 0, len(streams)*2)
+	for key, start := range streams {
+		streamKeys = append(streamKeys, key, start)
+	}
+
+	result, err := a.client.XRead(ctx, &redis.XReadArgs{
+		Streams: streamKeys,
+		Count:   count,
+		Block:   block,
+	}).Result()
+	if err != nil {
+		if errors.Is(err, redis.Nil) {
+			return make(map[string][]kvx.StreamEntry), nil
+		}
+		return nil, err
+	}
+
+	entries := make(map[string][]kvx.StreamEntry)
+	for _, stream := range result {
+		streamEntries := make([]kvx.StreamEntry, len(stream.Messages))
+		for i, msg := range stream.Messages {
+			streamEntries[i] = kvx.StreamEntry{
+				ID:     msg.ID,
+				Values: convertInterfaceMapToBytes(msg.Values),
+			}
+		}
+		entries[stream.Stream] = streamEntries
+	}
+	return entries, nil
+}
+
 // XRange reads entries in a range.
 func (a *Adapter) XRange(ctx context.Context, key string, start, stop string) ([]kvx.StreamEntry, error) {
 	result, err := a.client.XRange(ctx, key, start, stop).Result()
+	if err != nil {
+		return nil, err
+	}
+
+	entries := make([]kvx.StreamEntry, len(result))
+	for i, msg := range result {
+		entries[i] = kvx.StreamEntry{
+			ID:     msg.ID,
+			Values: convertInterfaceMapToBytes(msg.Values),
+		}
+	}
+	return entries, nil
+}
+
+// XRevRange reads entries in reverse order.
+func (a *Adapter) XRevRange(ctx context.Context, key string, start, stop string) ([]kvx.StreamEntry, error) {
+	result, err := a.client.XRevRange(ctx, key, start, stop).Result()
 	if err != nil {
 		return nil, err
 	}
@@ -295,6 +446,227 @@ func (a *Adapter) XLen(ctx context.Context, key string) (int64, error) {
 // XTrim trims the stream to approximately maxLen entries.
 func (a *Adapter) XTrim(ctx context.Context, key string, maxLen int64) error {
 	return a.client.XTrimMaxLen(ctx, key, maxLen).Err()
+}
+
+// XDel deletes specific entries from a stream.
+func (a *Adapter) XDel(ctx context.Context, key string, ids []string) error {
+	return a.client.XDel(ctx, key, ids...).Err()
+}
+
+// XGroupCreate creates a consumer group.
+func (a *Adapter) XGroupCreate(ctx context.Context, key string, group string, startID string) error {
+	return a.client.XGroupCreate(ctx, key, group, startID).Err()
+}
+
+// XGroupDestroy destroys a consumer group.
+func (a *Adapter) XGroupDestroy(ctx context.Context, key string, group string) error {
+	return a.client.XGroupDestroy(ctx, key, group).Err()
+}
+
+// XGroupCreateConsumer creates a consumer in a group.
+func (a *Adapter) XGroupCreateConsumer(ctx context.Context, key string, group string, consumer string) error {
+	return a.client.XGroupCreateConsumer(ctx, key, group, consumer).Err()
+}
+
+// XGroupDelConsumer deletes a consumer from a group.
+func (a *Adapter) XGroupDelConsumer(ctx context.Context, key string, group string, consumer string) error {
+	return a.client.XGroupDelConsumer(ctx, key, group, consumer).Err()
+}
+
+// XReadGroup reads entries as part of a consumer group.
+func (a *Adapter) XReadGroup(ctx context.Context, group string, consumer string, streams map[string]string, count int64, block time.Duration) (map[string][]kvx.StreamEntry, error) {
+	streamKeys := make([]string, 0, len(streams)*2)
+	for key, start := range streams {
+		streamKeys = append(streamKeys, key, start)
+	}
+
+	result, err := a.client.XReadGroup(ctx, &redis.XReadGroupArgs{
+		Group:    group,
+		Consumer: consumer,
+		Streams:  streamKeys,
+		Count:    count,
+		Block:    block,
+	}).Result()
+	if err != nil {
+		if errors.Is(err, redis.Nil) {
+			return make(map[string][]kvx.StreamEntry), nil
+		}
+		return nil, err
+	}
+
+	entries := make(map[string][]kvx.StreamEntry)
+	for _, stream := range result {
+		streamEntries := make([]kvx.StreamEntry, len(stream.Messages))
+		for i, msg := range stream.Messages {
+			streamEntries[i] = kvx.StreamEntry{
+				ID:     msg.ID,
+				Values: convertInterfaceMapToBytes(msg.Values),
+			}
+		}
+		entries[stream.Stream] = streamEntries
+	}
+	return entries, nil
+}
+
+// XAck acknowledges processing of stream entries.
+func (a *Adapter) XAck(ctx context.Context, key string, group string, ids []string) error {
+	return a.client.XAck(ctx, key, group, ids...).Err()
+}
+
+// XPending gets pending entries information.
+func (a *Adapter) XPending(ctx context.Context, key string, group string) (*kvx.PendingInfo, error) {
+	result, err := a.client.XPending(ctx, key, group).Result()
+	if err != nil {
+		return nil, err
+	}
+
+	return &kvx.PendingInfo{
+		Count:     result.Count,
+		StartID:   result.Lower,
+		EndID:     result.Higher,
+		Consumers: result.Consumers,
+	}, nil
+}
+
+// XPendingRange gets pending entries in a range.
+func (a *Adapter) XPendingRange(ctx context.Context, key string, group string, start string, stop string, count int64) ([]kvx.PendingEntry, error) {
+	result, err := a.client.XPendingExt(ctx, &redis.XPendingExtArgs{
+		Stream: key,
+		Group:  group,
+		Start:  start,
+		End:    stop,
+		Count:  count,
+	}).Result()
+	if err != nil {
+		return nil, err
+	}
+
+	entries := make([]kvx.PendingEntry, len(result))
+	for i, p := range result {
+		entries[i] = kvx.PendingEntry{
+			ID:         p.ID,
+			Consumer:   p.Consumer,
+			IdleTime:   p.Idle,
+			Deliveries: p.RetryCount,
+		}
+	}
+	return entries, nil
+}
+
+// XClaim claims pending entries for a consumer.
+func (a *Adapter) XClaim(ctx context.Context, key string, group string, consumer string, minIdleTime time.Duration, ids []string) ([]kvx.StreamEntry, error) {
+	result, err := a.client.XClaim(ctx, &redis.XClaimArgs{
+		Stream:   key,
+		Group:    group,
+		Consumer: consumer,
+		MinIdle:  minIdleTime,
+		Messages: ids,
+	}).Result()
+	if err != nil {
+		return nil, err
+	}
+
+	entries := make([]kvx.StreamEntry, len(result))
+	for i, msg := range result {
+		entries[i] = kvx.StreamEntry{
+			ID:     msg.ID,
+			Values: convertInterfaceMapToBytes(msg.Values),
+		}
+	}
+	return entries, nil
+}
+
+// XAutoClaim auto-claims pending entries.
+func (a *Adapter) XAutoClaim(ctx context.Context, key string, group string, consumer string, minIdleTime time.Duration, start string, count int64) (string, []kvx.StreamEntry, error) {
+	messages, next, err := a.client.XAutoClaim(ctx, &redis.XAutoClaimArgs{
+		Stream:   key,
+		Group:    group,
+		Consumer: consumer,
+		MinIdle:  minIdleTime,
+		Start:    start,
+		Count:    count,
+	}).Result()
+	if err != nil {
+		return "", nil, err
+	}
+
+	entries := make([]kvx.StreamEntry, len(messages))
+	for i, msg := range messages {
+		entries[i] = kvx.StreamEntry{
+			ID:     msg.ID,
+			Values: convertInterfaceMapToBytes(msg.Values),
+		}
+	}
+	return next, entries, nil
+}
+
+// XInfoGroups gets info about consumer groups.
+func (a *Adapter) XInfoGroups(ctx context.Context, key string) ([]kvx.GroupInfo, error) {
+	result, err := a.client.XInfoGroups(ctx, key).Result()
+	if err != nil {
+		return nil, err
+	}
+
+	groups := make([]kvx.GroupInfo, len(result))
+	for i, g := range result {
+		groups[i] = kvx.GroupInfo{
+			Name:            g.Name,
+			Consumers:       g.Consumers,
+			Pending:         g.Pending,
+			LastDeliveredID: g.LastDeliveredID,
+		}
+	}
+	return groups, nil
+}
+
+// XInfoConsumers gets info about consumers in a group.
+func (a *Adapter) XInfoConsumers(ctx context.Context, key string, group string) ([]kvx.ConsumerInfo, error) {
+	result, err := a.client.XInfoConsumers(ctx, key, group).Result()
+	if err != nil {
+		return nil, err
+	}
+
+	consumers := make([]kvx.ConsumerInfo, len(result))
+	for i, c := range result {
+		consumers[i] = kvx.ConsumerInfo{
+			Name:    c.Name,
+			Pending: c.Pending,
+			Idle:    c.Idle,
+		}
+	}
+	return consumers, nil
+}
+
+// XInfoStream gets info about a stream.
+func (a *Adapter) XInfoStream(ctx context.Context, key string) (*kvx.StreamInfo, error) {
+	result, err := a.client.XInfoStream(ctx, key).Result()
+	if err != nil {
+		return nil, err
+	}
+
+	info := &kvx.StreamInfo{
+		Length:          result.Length,
+		RadixTreeKeys:   result.RadixTreeKeys,
+		RadixTreeNodes:  result.RadixTreeNodes,
+		Groups:          result.Groups,
+		LastGeneratedID: result.LastGeneratedID,
+	}
+
+	if result.FirstEntry.ID != "" {
+		info.FirstEntry = &kvx.StreamEntry{
+			ID:     result.FirstEntry.ID,
+			Values: convertInterfaceMapToBytes(result.FirstEntry.Values),
+		}
+	}
+
+	if result.LastEntry.ID != "" {
+		info.LastEntry = &kvx.StreamEntry{
+			ID:     result.LastEntry.ID,
+			Values: convertInterfaceMapToBytes(result.LastEntry.Values),
+		}
+	}
+
+	return info, nil
 }
 
 // ============== Script Interface ==============
@@ -410,6 +782,33 @@ func (a *Adapter) Search(ctx context.Context, indexName string, query string, li
 	// Parse FT.SEARCH response
 	// Response format: [total, key1, [field1, value1, ...], key2, ...]
 	return parseFTSearchResponse(val)
+}
+
+// SearchWithSort performs a search query with sorting.
+func (a *Adapter) SearchWithSort(ctx context.Context, indexName string, query string, sortBy string, ascending bool, limit int) ([]string, error) {
+	args := []interface{}{"FT.SEARCH", indexName, query, "SORTBY", sortBy}
+	if !ascending {
+		args = append(args, "DESC")
+	}
+	args = append(args, "LIMIT", 0, limit)
+
+	val, err := a.client.Do(ctx, args...).Result()
+	if err != nil {
+		return nil, err
+	}
+
+	return parseFTSearchResponse(val)
+}
+
+// SearchAggregate performs an aggregation query.
+func (a *Adapter) SearchAggregate(ctx context.Context, indexName string, query string, limit int) ([]map[string]interface{}, error) {
+	val, err := a.client.Do(ctx, "FT.AGGREGATE", indexName, query, "LIMIT", 0, limit).Result()
+	if err != nil {
+		return nil, err
+	}
+
+	// Parse FT.AGGREGATE response
+	return parseFTAggregateResponse(val)
 }
 
 // ============== Pipeline Interface ==============
@@ -530,4 +929,30 @@ func parseFTSearchResponse(val interface{}) ([]string, error) {
 		}
 	}
 	return keys, nil
+}
+
+func parseFTAggregateResponse(val interface{}) ([]map[string]interface{}, error) {
+	arr, ok := val.([]interface{})
+	if !ok {
+		return nil, nil
+	}
+
+	if len(arr) < 1 {
+		return nil, nil
+	}
+
+	// Parse aggregation results
+	var results []map[string]interface{}
+	for i := 1; i < len(arr); i++ {
+		if row, ok := arr[i].([]interface{}); ok {
+			result := make(map[string]interface{})
+			for j := 0; j < len(row)-1; j += 2 {
+				if key, ok := row[j].(string); ok {
+					result[key] = row[j+1]
+				}
+			}
+			results = append(results, result)
+		}
+	}
+	return results, nil
 }
