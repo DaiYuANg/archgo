@@ -42,6 +42,23 @@ func BenchmarkTrieGet(b *testing.B) {
 	}
 }
 
+func BenchmarkTrieDeleteReinsert(b *testing.B) {
+	t := NewTrie[int]()
+	keys := makeBenchTrieKeys()
+	for i, key := range keys {
+		t.Put(key, i)
+	}
+	mask := benchTrieKeySpace - 1
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		key := keys[i&mask]
+		t.Delete(key)
+		t.Put(key, i)
+	}
+}
+
 func BenchmarkTrieKeysWithPrefix(b *testing.B) {
 	t := NewTrie[int]()
 	keys := makeBenchTrieKeys()
@@ -54,5 +71,20 @@ func BenchmarkTrieKeysWithPrefix(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		_ = t.KeysWithPrefix(prefix)
+	}
+}
+
+func BenchmarkTrieValuesWithPrefix(b *testing.B) {
+	t := NewTrie[int]()
+	keys := makeBenchTrieKeys()
+	for i, key := range keys {
+		t.Put(key, i)
+	}
+	prefix := "user/7/profile/"
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = t.ValuesWithPrefix(prefix)
 	}
 }
