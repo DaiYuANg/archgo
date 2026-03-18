@@ -1,10 +1,10 @@
 package sqltmplx
 
 import (
-	"github.com/DaiYuANg/arcgo/sqltmplx/dialect"
-	"github.com/DaiYuANg/arcgo/sqltmplx/parse"
-	"github.com/DaiYuANg/arcgo/sqltmplx/render"
-	"github.com/DaiYuANg/arcgo/sqltmplx/scan"
+	"github.com/DaiYuANg/arcgo/dbx/sqltmplx/dialect"
+	"github.com/DaiYuANg/arcgo/dbx/sqltmplx/parse"
+	"github.com/DaiYuANg/arcgo/dbx/sqltmplx/render"
+	"github.com/DaiYuANg/arcgo/dbx/sqltmplx/scan"
 )
 
 type Template struct {

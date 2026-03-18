@@ -4,7 +4,7 @@ import (
 	"reflect"
 	"strings"
 
-	"github.com/DaiYuANg/arcgo/sqltmplx/dialect"
+	"github.com/DaiYuANg/arcgo/dbx/sqltmplx/dialect"
 	"github.com/samber/lo"
 )
 
@@ -22,6 +22,14 @@ func newState(params any, d dialect.Dialect) *state {
 func (s *state) nextBind() string {
 	s.bindN++
 	return s.dialect.BindVar(s.bindN)
+}
+
+func exprEnv(params any) map[string]any {
+	env := envMap(params)
+	env["empty"] = isEmpty
+	env["blank"] = isBlank
+	env["present"] = isPresent
+	return env
 }
 
 func envMap(params any) map[string]any {
@@ -54,10 +62,14 @@ func envMap(params any) map[string]any {
 		return lo.Assign(lo.Map(fields, func(i int, _ int) map[string]any {
 			f := t.Field(i)
 			val := v.Field(i).Interface()
-			return map[string]any{
+			out := map[string]any{
 				f.Name:                  val,
 				strings.ToLower(f.Name): val,
 			}
+			for _, alias := range fieldAliases(f) {
+				out[alias] = val
+			}
+			return out
 		})...)
 	}
 	return map[string]any{}

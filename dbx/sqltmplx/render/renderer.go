@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/DaiYuANg/arcgo/sqltmplx/dialect"
-	"github.com/DaiYuANg/arcgo/sqltmplx/parse"
+	"github.com/DaiYuANg/arcgo/dbx/sqltmplx/dialect"
+	"github.com/DaiYuANg/arcgo/dbx/sqltmplx/parse"
 	"github.com/expr-lang/expr/vm"
 )
 
@@ -70,7 +70,7 @@ func renderNodes(nodes []parse.Node, st *state) (string, error) {
 }
 
 func evalIf(program *vm.Program, params any) (bool, error) {
-	out, err := exprRun(program, envMap(params))
+	out, err := exprRun(program, exprEnv(params))
 	if err != nil {
 		return false, err
 	}

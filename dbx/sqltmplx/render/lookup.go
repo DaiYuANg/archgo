@@ -9,6 +9,19 @@ import (
 )
 
 func lookup(params any, name string) mo.Option[any] {
+	parts := strings.Split(name, ".")
+	cur := params
+	for _, part := range parts {
+		next := lookupOne(cur, part)
+		if next.IsAbsent() {
+			return mo.None[any]()
+		}
+		cur = next.MustGet()
+	}
+	return mo.Some(cur)
+}
+
+func lookupOne(params any, name string) mo.Option[any] {
 	v := reflect.ValueOf(params)
 	for v.IsValid() && v.Kind() == reflect.Pointer {
 		if v.IsNil() {
@@ -20,9 +33,11 @@ func lookup(params any, name string) mo.Option[any] {
 		return mo.None[any]()
 	}
 	if v.Kind() == reflect.Map {
-		mv := v.MapIndex(reflect.ValueOf(name))
-		if mv.IsValid() {
-			return mo.Some(mv.Interface())
+		for _, key := range []string{name, strings.ToLower(name), strings.ToUpper(name)} {
+			mv := v.MapIndex(reflect.ValueOf(key))
+			if mv.IsValid() {
+				return mo.Some(mv.Interface())
+			}
 		}
 		return mo.None[any]()
 	}
@@ -36,9 +51,29 @@ func lookup(params any, name string) mo.Option[any] {
 			if f.Name == name || strings.EqualFold(f.Name, name) {
 				return mo.Some(v.Field(i).Interface())
 			}
+			for _, alias := range fieldAliases(f) {
+				if alias == name || strings.EqualFold(alias, name) {
+					return mo.Some(v.Field(i).Interface())
+				}
+			}
 		}
 	}
 	return mo.None[any]()
+}
+
+func fieldAliases(f reflect.StructField) []string {
+	var out []string
+	for _, tagKey := range []string{"sqltmpl", "db", "json"} {
+		raw := strings.TrimSpace(f.Tag.Get(tagKey))
+		if raw == "" || raw == "-" {
+			continue
+		}
+		alias := strings.TrimSpace(strings.Split(raw, ",")[0])
+		if alias != "" && alias != "-" {
+			out = append(out, alias)
+		}
+	}
+	return lo.Uniq(out)
 }
 
 func isEmpty(v any) bool {
@@ -62,7 +97,6 @@ func isEmpty(v any) bool {
 	return false
 }
 
-// isBlank checks if value is nil or empty using lo.IsEmpty
 func isBlank(v any) bool {
 	if v == nil {
 		return true
@@ -78,4 +112,8 @@ func isBlank(v any) bool {
 		return true
 	}
 	return lo.IsEmpty(rv.Interface())
+}
+
+func isPresent(v any) bool {
+	return !isBlank(v)
 }

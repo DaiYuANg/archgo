@@ -23,6 +23,11 @@ var directiveParser = participle.MustBuild[Directive](
 var nilRegex = regexp.MustCompile(`\bnil\b`)
 
 func parseDirective(input string) (*Directive, error) {
+	raw := strings.TrimSpace(input)
+	if !strings.HasPrefix(raw, "%") {
+		return nil, fmt.Errorf("sqltmplx: directive %q must start with %%", raw)
+	}
+	input = strings.TrimSpace(strings.TrimPrefix(raw, "%"))
 	d, err := directiveParser.ParseString("directive", input)
 	if err != nil {
 		return nil, fmt.Errorf("sqltmplx: parse directive %q: %w", input, err)
@@ -35,6 +40,5 @@ func parseDirective(input string) (*Directive, error) {
 
 func normalizeExpr(in string) string {
 	in = strings.TrimSpace(in)
-	// keep expression text normalized in one place.
 	return nilRegex.ReplaceAllString(in, "nil")
 }

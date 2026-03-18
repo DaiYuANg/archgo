@@ -17,14 +17,14 @@ func main() {
 	tpl := `
 SELECT id, name, status
 FROM users
-/* where */
-/* if name != nil */
-  AND name = #{name}
-/* end */
-/* if ids != nil */
-  AND id IN (#{ids*})
-/* end */
-/* end */
+/*%where */
+/*%if name != nil */
+  AND name = /* name */'alice'
+/*%end */
+/*%if ids != nil */
+  AND id IN (/* ids */(1, 2, 3))
+/*%end */
+/*%end */
 ORDER BY id DESC
 `
 
