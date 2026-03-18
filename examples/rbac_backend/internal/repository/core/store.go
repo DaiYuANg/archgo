@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 
-	"github.com/DaiYuANg/arcgo/bunx"
+	"github.com/DaiYuANg/arcgo/dbx/bunx"
 	"github.com/DaiYuANg/arcgo/examples/rbac_backend/internal/config"
 	"github.com/DaiYuANg/arcgo/examples/rbac_backend/internal/entity"
 	"github.com/DaiYuANg/arcgo/observabilityx"

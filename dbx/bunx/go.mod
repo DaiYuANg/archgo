@@ -1,4 +1,4 @@
-module github.com/DaiYuANg/arcgo/bunx
+module github.com/DaiYuANg/arcgo/dbx/bunx
 
 go 1.26.1
 

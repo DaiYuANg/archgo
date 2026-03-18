@@ -10,11 +10,13 @@ use (
 	./authx/http/fiber
 	./authx/http/gin
 	./authx/http/std
-	./bunx
 	./clientx
 	./collectionx
 	./configx
 	./configx/fx
+	./dbx
+	./dbx/bunx
+	./dbx/sqltmplx
 	./dix
 	./docs
 	./eventx
@@ -43,5 +45,4 @@ use (
 	./observabilityx
 	./pkg/fx
 	./pkg/randomport
-	./sqltmplx
 )
