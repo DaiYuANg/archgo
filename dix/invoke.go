@@ -1,26 +1,106 @@
 package dix
 
-func Invoke0(fn func()) InvokeFunc { return func(c *Container) error { dixInvoke0(c, fn); return nil } }
+type InvokeFunc struct {
+	run  func(*Container) error
+	meta InvokeMetadata
+}
+
+func (i InvokeFunc) apply(c *Container) error {
+	if i.run == nil {
+		return nil
+	}
+	return i.run(c)
+}
+
+func RawInvoke(fn func(*Container) error) InvokeFunc {
+	return NewInvokeFunc(fn, InvokeMetadata{
+		Label: "RawInvoke",
+		Raw:   true,
+	})
+}
+
+func Invoke0(fn func()) InvokeFunc {
+	return NewInvokeFunc(func(c *Container) error {
+		dixInvoke0(c, fn)
+		return nil
+	}, InvokeMetadata{Label: "Invoke0"})
+}
+
 func Invoke1[T any](fn func(T)) InvokeFunc {
-	return func(c *Container) error { return dixInvoke1(c, fn) }
+	return NewInvokeFunc(
+		func(c *Container) error { return dixInvoke1(c, fn) },
+		InvokeMetadata{
+			Label:        "Invoke1",
+			Dependencies: []ServiceRef{TypedService[T]()},
+		},
+	)
 }
+
 func Invoke2[T1, T2 any](fn func(T1, T2)) InvokeFunc {
-	return func(c *Container) error { return dixInvoke2(c, fn) }
+	return NewInvokeFunc(
+		func(c *Container) error { return dixInvoke2(c, fn) },
+		InvokeMetadata{
+			Label:        "Invoke2",
+			Dependencies: []ServiceRef{TypedService[T1](), TypedService[T2]()},
+		},
+	)
 }
+
 func Invoke3[T1, T2, T3 any](fn func(T1, T2, T3)) InvokeFunc {
-	return func(c *Container) error { return dixInvoke3(c, fn) }
+	return NewInvokeFunc(
+		func(c *Container) error { return dixInvoke3(c, fn) },
+		InvokeMetadata{
+			Label:        "Invoke3",
+			Dependencies: []ServiceRef{TypedService[T1](), TypedService[T2](), TypedService[T3]()},
+		},
+	)
 }
+
 func Invoke4[T1, T2, T3, T4 any](fn func(T1, T2, T3, T4)) InvokeFunc {
-	return func(c *Container) error { return dixInvoke4(c, fn) }
+	return NewInvokeFunc(
+		func(c *Container) error { return dixInvoke4(c, fn) },
+		InvokeMetadata{
+			Label:        "Invoke4",
+			Dependencies: []ServiceRef{TypedService[T1](), TypedService[T2](), TypedService[T3](), TypedService[T4]()},
+		},
+	)
 }
+
 func Invoke5[T1, T2, T3, T4, T5 any](fn func(T1, T2, T3, T4, T5)) InvokeFunc {
-	return func(c *Container) error { return dixInvoke5(c, fn) }
+	return NewInvokeFunc(
+		func(c *Container) error { return dixInvoke5(c, fn) },
+		InvokeMetadata{
+			Label: "Invoke5",
+			Dependencies: []ServiceRef{
+				TypedService[T1](),
+				TypedService[T2](),
+				TypedService[T3](),
+				TypedService[T4](),
+				TypedService[T5](),
+			},
+		},
+	)
 }
+
 func Invoke6[T1, T2, T3, T4, T5, T6 any](fn func(T1, T2, T3, T4, T5, T6)) InvokeFunc {
-	return func(c *Container) error { return dixInvoke6(c, fn) }
+	return NewInvokeFunc(
+		func(c *Container) error { return dixInvoke6(c, fn) },
+		InvokeMetadata{
+			Label: "Invoke6",
+			Dependencies: []ServiceRef{
+				TypedService[T1](),
+				TypedService[T2](),
+				TypedService[T3](),
+				TypedService[T4](),
+				TypedService[T5](),
+				TypedService[T6](),
+			},
+		},
+	)
 }
 
 func dixInvoke0(c *Container, fn func()) { fn() }
+
 func dixInvoke1[T any](c *Container, fn func(T)) error {
 	t, err := ResolveAs[T](c)
 	if err != nil {
@@ -29,6 +109,7 @@ func dixInvoke1[T any](c *Container, fn func(T)) error {
 	fn(t)
 	return nil
 }
+
 func dixInvoke2[T1, T2 any](c *Container, fn func(T1, T2)) error {
 	t1, err := ResolveAs[T1](c)
 	if err != nil {
@@ -41,6 +122,7 @@ func dixInvoke2[T1, T2 any](c *Container, fn func(T1, T2)) error {
 	fn(t1, t2)
 	return nil
 }
+
 func dixInvoke3[T1, T2, T3 any](c *Container, fn func(T1, T2, T3)) error {
 	t1, err := ResolveAs[T1](c)
 	if err != nil {
@@ -57,6 +139,7 @@ func dixInvoke3[T1, T2, T3 any](c *Container, fn func(T1, T2, T3)) error {
 	fn(t1, t2, t3)
 	return nil
 }
+
 func dixInvoke4[T1, T2, T3, T4 any](c *Container, fn func(T1, T2, T3, T4)) error {
 	t1, err := ResolveAs[T1](c)
 	if err != nil {
@@ -77,6 +160,7 @@ func dixInvoke4[T1, T2, T3, T4 any](c *Container, fn func(T1, T2, T3, T4)) error
 	fn(t1, t2, t3, t4)
 	return nil
 }
+
 func dixInvoke5[T1, T2, T3, T4, T5 any](c *Container, fn func(T1, T2, T3, T4, T5)) error {
 	t1, err := ResolveAs[T1](c)
 	if err != nil {
@@ -101,6 +185,7 @@ func dixInvoke5[T1, T2, T3, T4, T5 any](c *Container, fn func(T1, T2, T3, T4, T5
 	fn(t1, t2, t3, t4, t5)
 	return nil
 }
+
 func dixInvoke6[T1, T2, T3, T4, T5, T6 any](c *Container, fn func(T1, T2, T3, T4, T5, T6)) error {
 	t1, err := ResolveAs[T1](c)
 	if err != nil {

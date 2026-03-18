@@ -3,7 +3,15 @@ package dix
 import (
 	"os"
 
+	"github.com/DaiYuANg/arcgo/collectionx"
 	"github.com/samber/lo"
+)
+
+var builtInProfiles = collectionx.NewSet(
+	ProfileDefault,
+	ProfileDev,
+	ProfileTest,
+	ProfileProd,
 )
 
 // ProfileManager provides utilities for working with application profiles.
@@ -23,7 +31,7 @@ func ProfileFromEnv(envVar string, defaultProfile Profile) Profile {
 	}
 
 	profile := Profile(value)
-	if lo.Contains([]Profile{ProfileDefault, ProfileDev, ProfileTest, ProfileProd}, profile) {
+	if builtInProfiles.Contains(profile) {
 		return profile
 	}
 	return defaultProfile
@@ -75,7 +83,7 @@ func NewProfileFilter(profile Profile) *ProfileFilter {
 
 // IsActive checks if a module should be active for the current profile.
 func (pf *ProfileFilter) IsActive(mod Module) bool {
-	return isActiveForProfile(mod, pf.profile)
+	return isActiveForProfile(mod.spec, pf.profile)
 }
 
 // FilterModules returns only the modules that are active for the current profile.
@@ -84,7 +92,9 @@ func (pf *ProfileFilter) FilterModules(modules []Module) []Module {
 	if err != nil {
 		return nil
 	}
-	return filtered
+	return lo.Map(filtered.Values(), func(spec *moduleSpec, _ int) Module {
+		return Module{spec: spec}
+	})
 }
 
 // Global profile manager instance

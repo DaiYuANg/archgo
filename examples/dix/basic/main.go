@@ -28,7 +28,10 @@ func main() {
 		),
 	)
 
-	logger, _ := logx.NewDevelopment()
+	logger, err := logx.NewDevelopment()
+	if err != nil {
+		panic(err)
+	}
 	serverModule := dix.NewModule("server",
 		dix.WithModuleImports(configModule),
 		dix.WithModuleProviders(
@@ -56,23 +59,24 @@ func main() {
 		dix.WithLogger(logger),
 	)
 
-	if err := app.Build(); err != nil {
+	rt, err := app.Build()
+	if err != nil {
 		panic(err)
 	}
-	if err := app.Start(context.Background()); err != nil {
+	if err := rt.Start(context.Background()); err != nil {
 		panic(err)
 	}
-	defer func() { _ = app.Stop(context.Background()) }()
+	defer func() { _ = rt.Stop(context.Background()) }()
 
 	fmt.Println("basic app built and started")
-	fmt.Printf("health: %v\n", app.CheckHealth(context.Background()).Healthy())
-	fmt.Printf("liveness: %v\n", app.CheckLiveness(context.Background()).Healthy())
-	fmt.Printf("readiness: %v\n", app.CheckReadiness(context.Background()).Healthy())
+	fmt.Printf("health: %v\n", rt.CheckHealth(context.Background()).Healthy())
+	fmt.Printf("liveness: %v\n", rt.CheckLiveness(context.Background()).Healthy())
+	fmt.Printf("readiness: %v\n", rt.CheckReadiness(context.Background()).Healthy())
 
 	mux := http.NewServeMux()
-	mux.HandleFunc("/healthz", app.HealthHandler())
-	mux.HandleFunc("/livez", app.LivenessHandler())
-	mux.HandleFunc("/readyz", app.ReadinessHandler())
+	mux.HandleFunc("/healthz", rt.HealthHandler())
+	mux.HandleFunc("/livez", rt.LivenessHandler())
+	mux.HandleFunc("/readyz", rt.ReadinessHandler())
 	_ = mux
 
 	time.Sleep(100 * time.Millisecond)

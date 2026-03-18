@@ -17,11 +17,11 @@ go get github.com/DaiYuANg/arcgo/{package}
 
 ## 核心特性
 
-- 🧩 **模块化组织** - 按包拆分并支持按需引入，允许包间依赖组合（如 `collectionx`、`observabilityx`）
-- 🔒 **类型安全** - 基于 Go 泛型与显式接口的强类型 API
-- 🧪 **实验性阶段** - 当前处于快速迭代，API 与行为仍可能调整
-- 🔗 **依赖可控** - 不锁定单一框架，但会按功能引入必要依赖
-- 🔍 **可观测性扩展** - 通过 `observabilityx` 可选对接 OpenTelemetry 与 Prometheus
+- **模块化组织** - 按包拆分并支持按需引入，允许包间依赖组合（如 `collectionx`、`observabilityx`）
+- **类型安全** - 基于 Go 泛型与显式接口的强类型 API
+- **实验性阶段** - 当前处于快速迭代，API 与行为仍可能调整
+- **依赖可控** - 不锁定单一框架，但会按功能引入必要依赖
+- **可观测性扩展** - 通过 `observabilityx` 可选对接 OpenTelemetry 与 Prometheus
 
 ## 包概览
 
@@ -29,6 +29,7 @@ go get github.com/DaiYuANg/arcgo/{package}
   {{< card link="/docs/authx" title="authx" subtitle="多场景可扩展的认证与鉴权抽象" icon="lock-closed" >}}
   {{< card link="/docs/collectionx" title="collectionx" subtitle="泛型集合与并发安全结构" icon="collection" >}}
   {{< card link="/docs/configx" title="configx" subtitle="分层配置加载与校验" icon="cog" >}}
+  {{< card link="/docs/dix" title="dix" subtitle="基于 do 的强类型模块化应用框架" icon="cube" >}}
   {{< card link="/docs/eventx" title="eventx" subtitle="进程内强类型事件总线" icon="lightning-bolt" >}}
   {{< card link="/docs/httpx" title="httpx" subtitle="多框架统一强类型 HTTP 路由" icon="server" >}}
   {{< card link="/docs/logx" title="logx" subtitle="结构化日志与 slog 互通" icon="document-text" >}}
@@ -42,6 +43,10 @@ go get github.com/DaiYuANg/arcgo/{package}
 ### API 服务基线
 
 `httpx + configx + logx`
+
+### 模块化应用基线
+
+`dix + configx + logx`
 
 ### 事件驱动架构
 
@@ -118,6 +123,7 @@ httpx.Get(s, "/health", func(ctx context.Context, input *struct{}) (*HealthOutpu
 - 需要容器/数据辅助：从 [collectionx](/docs/collectionx) 开始
 - 需要认证/授权：从 [authx](/docs/authx) 开始
 - 需要配置管理：从 [configx](/docs/configx) 开始
+- 需要模块化应用组装和 typed 生命周期管理：从 [dix](/docs/dix) 开始
 - 需要事件总线：从 [eventx](/docs/eventx) 开始
 - 需要 HTTP 路由：从 [httpx](/docs/httpx) 开始
 - 需要日志记录：从 [logx](/docs/logx) 开始

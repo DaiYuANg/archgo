@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/DaiYuANg/arcgo/collectionx"
 	"github.com/samber/lo"
 )
 
@@ -52,7 +53,7 @@ func (c *Container) RegisterHealthCheckOfKind(kind HealthKind, name string, fn H
 	if kind == "" {
 		kind = HealthKindGeneral
 	}
-	c.healthChecks = append(c.healthChecks, healthCheckEntry{name: name, kind: kind, fn: fn})
+	c.healthChecks.Add(healthCheckEntry{name: name, kind: kind, fn: fn})
 }
 
 // HealthReport describes the current health status.
@@ -63,12 +64,9 @@ type HealthReport struct {
 
 // Healthy reports whether all checks passed.
 func (r HealthReport) Healthy() bool {
-	for _, err := range r.Checks {
-		if err != nil {
-			return false
-		}
-	}
-	return true
+	return lo.EveryBy(lo.Values(r.Checks), func(err error) bool {
+		return err == nil
+	})
 }
 
 // Error returns a combined error when one or more checks fail.
@@ -77,12 +75,11 @@ func (r HealthReport) Error() error {
 		return nil
 	}
 
-	names := lo.FilterMap(lo.Keys(r.Checks), func(name string, _ int) (string, bool) {
-		err := r.Checks[name]
-		if err == nil {
+	names := lo.FilterMap(lo.Entries(r.Checks), func(entry lo.Entry[string, error], _ int) (string, bool) {
+		if entry.Value == nil {
 			return "", false
 		}
-		return fmt.Sprintf("%s: %v", name, err), true
+		return fmt.Sprintf("%s: %v", entry.Key, entry.Value), true
 	})
 	sort.Strings(names)
 	return fmt.Errorf("health check failed: %s", strings.Join(names, "; "))
@@ -95,69 +92,94 @@ func (r HealthReport) MarshalJSON() ([]byte, error) {
 		Healthy bool               `json:"healthy"`
 		Checks  map[string]*string `json:"checks"`
 	}
-	checks := make(map[string]*string, len(r.Checks))
-	for name, err := range r.Checks {
+
+	checks := collectionx.NewMapWithCapacity[string, *string](len(r.Checks))
+	lo.ForEach(lo.Entries(r.Checks), func(entry lo.Entry[string, error], _ int) {
+		name, err := entry.Key, entry.Value
 		if err == nil {
-			checks[name] = nil
-			continue
+			checks.Set(name, nil)
+			return
 		}
-		msg := err.Error()
-		checks[name] = &msg
-	}
-	return json.Marshal(payload{Kind: r.Kind, Healthy: r.Healthy(), Checks: checks})
+		checks.Set(name, new(err.Error()))
+	})
+
+	return json.Marshal(payload{Kind: r.Kind, Healthy: r.Healthy(), Checks: checks.All()})
 }
 
-// CheckHealth executes all framework-managed health checks.
-func (a *App) CheckHealth(ctx context.Context) HealthReport {
-	return a.checkHealthByKind(ctx, HealthKindGeneral)
+// CheckHealth executes all general health checks.
+func (r *Runtime) CheckHealth(ctx context.Context) HealthReport {
+	return r.checkHealthByKind(ctx, HealthKindGeneral)
 }
 
 // CheckLiveness executes all liveness checks.
-func (a *App) CheckLiveness(ctx context.Context) HealthReport {
-	return a.checkHealthByKind(ctx, HealthKindLiveness)
+func (r *Runtime) CheckLiveness(ctx context.Context) HealthReport {
+	return r.checkHealthByKind(ctx, HealthKindLiveness)
 }
 
 // CheckReadiness executes all readiness checks.
-func (a *App) CheckReadiness(ctx context.Context) HealthReport {
-	return a.checkHealthByKind(ctx, HealthKindReadiness)
+func (r *Runtime) CheckReadiness(ctx context.Context) HealthReport {
+	return r.checkHealthByKind(ctx, HealthKindReadiness)
 }
 
-func (a *App) checkHealthByKind(ctx context.Context, kind HealthKind) HealthReport {
-	report := HealthReport{Kind: kind, Checks: make(map[string]error)}
-	for _, check := range a.container.healthChecks {
-		if check.kind != kind {
-			continue
-		}
+func (r *Runtime) checkHealthByKind(ctx context.Context, kind HealthKind) HealthReport {
+	report := HealthReport{Kind: kind, Checks: map[string]error{}}
+	if r == nil || r.container == nil {
+		return report
+	}
+
+	checks := lo.Filter(r.container.healthChecks.Values(), func(check healthCheckEntry, _ int) bool {
+		return check.kind == kind
+	})
+	reportChecks := collectionx.NewMapWithCapacity[string, error](len(checks))
+	lo.ForEach(checks, func(check healthCheckEntry, _ int) {
 		err := check.fn(ctx)
-		report.Checks[check.name] = err
-		if a.logger != nil {
+		reportChecks.Set(check.name, err)
+		if r.logger != nil {
 			if err != nil {
-				a.logger.Warn("health check failed", "kind", check.kind, "check", check.name, "error", err)
+				r.logger.Warn("health check failed", "kind", check.kind, "check", check.name, "error", err)
 			} else {
-				a.logger.Debug("health check passed", "kind", check.kind, "check", check.name)
+				r.logger.Debug("health check passed", "kind", check.kind, "check", check.name)
 			}
 		}
-	}
+	})
+	report.Checks = reportChecks.All()
 	return report
 }
 
-func (a *App) healthHandler(kind HealthKind) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		ctx := r.Context()
+// HealthHandler returns a HTTP handler for general health checks.
+func (r *Runtime) HealthHandler() http.HandlerFunc {
+	return r.healthHandler(HealthKindGeneral)
+}
+
+// LivenessHandler returns a HTTP handler for liveness checks.
+func (r *Runtime) LivenessHandler() http.HandlerFunc {
+	return r.healthHandler(HealthKindLiveness)
+}
+
+// ReadinessHandler returns a HTTP handler for readiness checks.
+func (r *Runtime) ReadinessHandler() http.HandlerFunc {
+	return r.healthHandler(HealthKindReadiness)
+}
+
+func (r *Runtime) healthHandler(kind HealthKind) http.HandlerFunc {
+	return func(w http.ResponseWriter, req *http.Request) {
+		ctx := req.Context()
 		var report HealthReport
+
 		switch kind {
 		case HealthKindLiveness:
-			report = a.CheckLiveness(ctx)
+			report = r.CheckLiveness(ctx)
 		case HealthKindReadiness:
-			report = a.CheckReadiness(ctx)
+			report = r.CheckReadiness(ctx)
 		default:
-			report = a.CheckHealth(ctx)
+			report = r.CheckHealth(ctx)
 		}
 
 		status := http.StatusOK
 		if !report.Healthy() {
 			status = http.StatusServiceUnavailable
 		}
+
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(status)
 		_ = json.NewEncoder(w).Encode(report)

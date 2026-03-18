@@ -23,6 +23,7 @@ go get github.com/DaiYuANg/arcgo/{package}
 | [clientx](./clientx) | Protocol Clients | Protocol-oriented clients (`http/tcp/udp`) with shared engineering conventions |
 | [collectionx](./collectionx) | Data Structures | Generic collections and concurrency-safe structures |
 | [configx](./configx) | Configuration Management | Hierarchical configuration loading and validation |
+| [dix](./dix) | Application Framework | Strongly typed modular app framework built on `do` |
 | [eventx](./eventx) | Event Bus | In-process strongly typed event bus |
 | [httpx](./httpx) | HTTP Routing | Multi-framework unified strongly typed HTTP routing |
 | [logx](./logx) | Logging | Structured logging with slog interoperability |
@@ -47,6 +48,7 @@ go get github.com/DaiYuANg/arcgo/{package}
 - Need an extensible authentication/authorization abstraction: Start with `authx`
 - Need protocol-oriented clients (`http/tcp/udp`) with shared conventions: Start with `clientx`
 - Need configuration loading from `.env` + files + environment variables: Start with `configx`
+- Need modular application composition, typed DI, lifecycle, and startup validation: Start with `dix`
 - Need in-process typed pub/sub: Start with `eventx`
 - Need unified typed HTTP handlers across frameworks: Start with `httpx`
 - Need structured logging with rotation: Start with `logx`
@@ -55,6 +57,7 @@ go get github.com/DaiYuANg/arcgo/{package}
 ## Typical Combinations
 
 - **API Service Baseline**: `httpx + configx + logx`
+- **Modular App Baseline**: `dix + configx + logx`
 - **Event-driven within monolith**: `eventx + logx`
 - **Data-intensive tools/internal libraries**: `collectionx + configx`
 

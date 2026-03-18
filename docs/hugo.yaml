@@ -12,7 +12,6 @@ outputs:
   page: [html]
   section: [html, rss]
 
-# 多语言配置
 defaultContentLanguage: en
 defaultContentLanguageInSubdir: false
 languages:
@@ -25,7 +24,6 @@ languages:
     languageCode: en
     weight: 1
 
-# Markdown 渲染配置
 markup:
   goldmark:
     renderer:
@@ -72,40 +70,45 @@ menu:
       nameEn: ConfigX
       pageRef: /docs/configx
       weight: 6
+    - identifier: dix
+      name: Dix
+      nameEn: Dix
+      pageRef: /docs/dix
+      weight: 7
     - identifier: eventx
       name: EventX
       nameEn: EventX
       pageRef: /docs/eventx
-      weight: 7
+      weight: 8
     - identifier: httpx
       name: HTTPX
       nameEn: HTTPX
       pageRef: /docs/httpx
-      weight: 8
+      weight: 9
     - identifier: logx
       name: LogX
       nameEn: LogX
       pageRef: /docs/logx
-      weight: 9
+      weight: 10
     - identifier: observabilityx
       name: ObservabilityX
       nameEn: ObservabilityX
       pageRef: /docs/observabilityx
-      weight: 10
+      weight: 11
     - identifier: github
       name: GitHub
       nameEn: GitHub
       url: https://github.com/DaiYuANg/arcgo
-      weight: 11
+      weight: 12
     - identifier: theme-toggle
       name: Theme
-      weight: 12
+      weight: 13
       params:
         type: theme-toggle
         label: false
     - identifier: language-switch
       name: Language Switcher
-      weight: 13
+      weight: 14
       params:
         type: language-switch
         label: true

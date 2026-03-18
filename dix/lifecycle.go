@@ -4,6 +4,9 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+
+	collectionlist "github.com/DaiYuANg/arcgo/collectionx/list"
+	"github.com/samber/lo"
 )
 
 // StartHook is executed when the application starts.
@@ -18,31 +21,40 @@ type Lifecycle interface {
 	OnStop(hook StopHook)
 }
 
+type HookFunc struct {
+	register func(*Container, Lifecycle)
+	meta     HookMetadata
+}
+
+func (h HookFunc) bind(c *Container, lc Lifecycle) {
+	if h.register != nil {
+		h.register(c, lc)
+	}
+}
+
 // lifecycleImpl is the internal implementation.
 type lifecycleImpl struct {
-	startHooks []StartHook
-	stopHooks  []StopHook
+	startHooks collectionlist.List[StartHook]
+	stopHooks  collectionlist.List[StopHook]
 	logger     *slog.Logger
 }
 
 func newLifecycle() *lifecycleImpl {
 	return &lifecycleImpl{
-		startHooks: make([]StartHook, 0),
-		stopHooks:  make([]StopHook, 0),
-		logger:     slog.Default(),
+		logger: slog.Default(),
 	}
 }
 
 func (l *lifecycleImpl) OnStart(hook StartHook) {
-	l.startHooks = append(l.startHooks, hook)
+	l.startHooks.Add(hook)
 }
 
 func (l *lifecycleImpl) OnStop(hook StopHook) {
-	l.stopHooks = append(l.stopHooks, hook)
+	l.stopHooks.Add(hook)
 }
 
 func (l *lifecycleImpl) executeStartHooks(ctx context.Context, _ *Container) error {
-	for i, hook := range l.startHooks {
+	for i, hook := range l.startHooks.Values() {
 		if err := hook(ctx); err != nil {
 			if l.logger != nil {
 				l.logger.Error("start hook failed", "index", i, "error", err)
@@ -54,8 +66,8 @@ func (l *lifecycleImpl) executeStartHooks(ctx context.Context, _ *Container) err
 }
 
 func (l *lifecycleImpl) executeStopHooks(ctx context.Context, _ *Container) error {
-	for i := len(l.stopHooks) - 1; i >= 0; i-- {
-		hook := l.stopHooks[i]
+	stopHooks := lo.Reverse(l.stopHooks.Values())
+	for i, hook := range stopHooks {
 		if err := hook(ctx); err != nil {
 			if l.logger != nil {
 				l.logger.Error("stop hook failed", "index", i, "error", err)
@@ -66,10 +78,26 @@ func (l *lifecycleImpl) executeStopHooks(ctx context.Context, _ *Container) erro
 	return nil
 }
 
-// OnStartHook creates a typed start hook.
-// The container is captured in the closure at registration time.
-func OnStartHook[T any](c *Container, fn func(context.Context, T) error) func(lc Lifecycle) {
-	return func(lc Lifecycle) {
+func OnStart0(fn func(context.Context) error) HookFunc {
+	return NewHookFunc(func(_ *Container, lc Lifecycle) {
+		lc.OnStart(fn)
+	}, HookMetadata{
+		Label: "OnStart0",
+		Kind:  HookKindStart,
+	})
+}
+
+func OnStop0(fn func(context.Context) error) HookFunc {
+	return NewHookFunc(func(_ *Container, lc Lifecycle) {
+		lc.OnStop(fn)
+	}, HookMetadata{
+		Label: "OnStop0",
+		Kind:  HookKindStop,
+	})
+}
+
+func OnStart[T any](fn func(context.Context, T) error) HookFunc {
+	return NewHookFunc(func(c *Container, lc Lifecycle) {
 		lc.OnStart(func(ctx context.Context) error {
 			t, err := ResolveAs[T](c)
 			if err != nil {
@@ -77,12 +105,15 @@ func OnStartHook[T any](c *Container, fn func(context.Context, T) error) func(lc
 			}
 			return fn(ctx, t)
 		})
-	}
+	}, HookMetadata{
+		Label:        "OnStart",
+		Kind:         HookKindStart,
+		Dependencies: []ServiceRef{TypedService[T]()},
+	})
 }
 
-// OnStopHook creates a typed stop hook.
-func OnStopHook[T any](c *Container, fn func(context.Context, T) error) func(lc Lifecycle) {
-	return func(lc Lifecycle) {
+func OnStop[T any](fn func(context.Context, T) error) HookFunc {
+	return NewHookFunc(func(c *Container, lc Lifecycle) {
 		lc.OnStop(func(ctx context.Context) error {
 			t, err := ResolveAs[T](c)
 			if err != nil {
@@ -90,12 +121,15 @@ func OnStopHook[T any](c *Container, fn func(context.Context, T) error) func(lc 
 			}
 			return fn(ctx, t)
 		})
-	}
+	}, HookMetadata{
+		Label:        "OnStop",
+		Kind:         HookKindStop,
+		Dependencies: []ServiceRef{TypedService[T]()},
+	})
 }
 
-// OnStartHook2 creates a typed start hook with 2 dependencies.
-func OnStartHook2[T1, T2 any](c *Container, fn func(context.Context, T1, T2) error) func(lc Lifecycle) {
-	return func(lc Lifecycle) {
+func OnStart2[T1, T2 any](fn func(context.Context, T1, T2) error) HookFunc {
+	return NewHookFunc(func(c *Container, lc Lifecycle) {
 		lc.OnStart(func(ctx context.Context) error {
 			t1, err := ResolveAs[T1](c)
 			if err != nil {
@@ -107,12 +141,15 @@ func OnStartHook2[T1, T2 any](c *Container, fn func(context.Context, T1, T2) err
 			}
 			return fn(ctx, t1, t2)
 		})
-	}
+	}, HookMetadata{
+		Label:        "OnStart2",
+		Kind:         HookKindStart,
+		Dependencies: []ServiceRef{TypedService[T1](), TypedService[T2]()},
+	})
 }
 
-// OnStopHook2 creates a typed stop hook with 2 dependencies.
-func OnStopHook2[T1, T2 any](c *Container, fn func(context.Context, T1, T2) error) func(lc Lifecycle) {
-	return func(lc Lifecycle) {
+func OnStop2[T1, T2 any](fn func(context.Context, T1, T2) error) HookFunc {
+	return NewHookFunc(func(c *Container, lc Lifecycle) {
 		lc.OnStop(func(ctx context.Context) error {
 			t1, err := ResolveAs[T1](c)
 			if err != nil {
@@ -124,12 +161,15 @@ func OnStopHook2[T1, T2 any](c *Container, fn func(context.Context, T1, T2) erro
 			}
 			return fn(ctx, t1, t2)
 		})
-	}
+	}, HookMetadata{
+		Label:        "OnStop2",
+		Kind:         HookKindStop,
+		Dependencies: []ServiceRef{TypedService[T1](), TypedService[T2]()},
+	})
 }
 
-// OnStartHook3 creates a typed start hook with 3 dependencies.
-func OnStartHook3[T1, T2, T3 any](c *Container, fn func(context.Context, T1, T2, T3) error) func(lc Lifecycle) {
-	return func(lc Lifecycle) {
+func OnStart3[T1, T2, T3 any](fn func(context.Context, T1, T2, T3) error) HookFunc {
+	return NewHookFunc(func(c *Container, lc Lifecycle) {
 		lc.OnStart(func(ctx context.Context) error {
 			t1, err := ResolveAs[T1](c)
 			if err != nil {
@@ -145,12 +185,15 @@ func OnStartHook3[T1, T2, T3 any](c *Container, fn func(context.Context, T1, T2,
 			}
 			return fn(ctx, t1, t2, t3)
 		})
-	}
+	}, HookMetadata{
+		Label:        "OnStart3",
+		Kind:         HookKindStart,
+		Dependencies: []ServiceRef{TypedService[T1](), TypedService[T2](), TypedService[T3]()},
+	})
 }
 
-// OnStopHook3 creates a typed stop hook with 3 dependencies.
-func OnStopHook3[T1, T2, T3 any](c *Container, fn func(context.Context, T1, T2, T3) error) func(lc Lifecycle) {
-	return func(lc Lifecycle) {
+func OnStop3[T1, T2, T3 any](fn func(context.Context, T1, T2, T3) error) HookFunc {
+	return NewHookFunc(func(c *Container, lc Lifecycle) {
 		lc.OnStop(func(ctx context.Context) error {
 			t1, err := ResolveAs[T1](c)
 			if err != nil {
@@ -166,18 +209,9 @@ func OnStopHook3[T1, T2, T3 any](c *Container, fn func(context.Context, T1, T2, 
 			}
 			return fn(ctx, t1, t2, t3)
 		})
-	}
-}
-
-// Hook is deprecated.
-var Hook = hookHelper{}
-
-type hookHelper struct{}
-
-func (hookHelper) OnStart(any) {
-	panic("use OnStartHook[T](c, fn)(lc) instead")
-}
-
-func (hookHelper) OnStop(any) {
-	panic("use OnStopHook[T](c, fn)(lc) instead")
+	}, HookMetadata{
+		Label:        "OnStop3",
+		Kind:         HookKindStop,
+		Dependencies: []ServiceRef{TypedService[T1](), TypedService[T2](), TypedService[T3]()},
+	})
 }

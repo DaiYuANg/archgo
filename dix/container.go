@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 
+	collectionlist "github.com/DaiYuANg/arcgo/collectionx/list"
 	do "github.com/samber/do/v2"
 	mo "github.com/samber/mo"
 )
@@ -15,15 +16,14 @@ import (
 // Raw() exists as an explicit escape hatch for advanced integrations.
 type Container struct {
 	injector     do.Injector
-	healthChecks []healthCheckEntry
+	healthChecks collectionlist.List[healthCheckEntry]
 	logger       *slog.Logger
 }
 
 func newContainer() *Container {
 	return &Container{
-		injector:     do.New(),
-		healthChecks: make([]healthCheckEntry, 0),
-		logger:       slog.Default(),
+		injector: do.New(),
+		logger:   slog.Default(),
 	}
 }
 
@@ -35,15 +35,30 @@ func (c *Container) Raw() do.Injector { return c.injector }
 func (c *Container) Injector() do.Injector { return c.injector }
 
 func (c *Container) Shutdown(ctx context.Context) error {
+	report := c.ShutdownReport(ctx)
+	if report == nil || len(report.Errors) == 0 {
+		return nil
+	}
+	return report
+}
+
+func (c *Container) ShutdownReport(ctx context.Context) *do.ShutdownReport {
+	if c == nil || c.injector == nil {
+		return nil
+	}
 	return c.injector.ShutdownWithContext(ctx)
 }
 
+func resolveInjectorAs[T any](injector do.Injector) (T, error) {
+	return do.InvokeNamed[T](injector, serviceNameOf[T]())
+}
+
 func ProvideT[T any](c *Container, fn func() T) {
-	do.Provide(c.injector, func(i do.Injector) (T, error) { return fn(), nil })
+	do.ProvideNamed(c.injector, serviceNameOf[T](), func(i do.Injector) (T, error) { return fn(), nil })
 }
 func Provide1T[T, D1 any](c *Container, fn func(D1) T) {
-	do.Provide(c.injector, func(i do.Injector) (T, error) {
-		d1, err := do.Invoke[D1](i)
+	do.ProvideNamed(c.injector, serviceNameOf[T](), func(i do.Injector) (T, error) {
+		d1, err := resolveInjectorAs[D1](i)
 		if err != nil {
 			var zero T
 			return zero, err
@@ -52,13 +67,13 @@ func Provide1T[T, D1 any](c *Container, fn func(D1) T) {
 	})
 }
 func Provide2T[T, D1, D2 any](c *Container, fn func(D1, D2) T) {
-	do.Provide(c.injector, func(i do.Injector) (T, error) {
-		d1, err := do.Invoke[D1](i)
+	do.ProvideNamed(c.injector, serviceNameOf[T](), func(i do.Injector) (T, error) {
+		d1, err := resolveInjectorAs[D1](i)
 		if err != nil {
 			var zero T
 			return zero, err
 		}
-		d2, err := do.Invoke[D2](i)
+		d2, err := resolveInjectorAs[D2](i)
 		if err != nil {
 			var zero T
 			return zero, err
@@ -67,18 +82,18 @@ func Provide2T[T, D1, D2 any](c *Container, fn func(D1, D2) T) {
 	})
 }
 func Provide3T[T, D1, D2, D3 any](c *Container, fn func(D1, D2, D3) T) {
-	do.Provide(c.injector, func(i do.Injector) (T, error) {
-		d1, err := do.Invoke[D1](i)
+	do.ProvideNamed(c.injector, serviceNameOf[T](), func(i do.Injector) (T, error) {
+		d1, err := resolveInjectorAs[D1](i)
 		if err != nil {
 			var zero T
 			return zero, err
 		}
-		d2, err := do.Invoke[D2](i)
+		d2, err := resolveInjectorAs[D2](i)
 		if err != nil {
 			var zero T
 			return zero, err
 		}
-		d3, err := do.Invoke[D3](i)
+		d3, err := resolveInjectorAs[D3](i)
 		if err != nil {
 			var zero T
 			return zero, err
@@ -87,23 +102,23 @@ func Provide3T[T, D1, D2, D3 any](c *Container, fn func(D1, D2, D3) T) {
 	})
 }
 func Provide4T[T, D1, D2, D3, D4 any](c *Container, fn func(D1, D2, D3, D4) T) {
-	do.Provide(c.injector, func(i do.Injector) (T, error) {
-		d1, err := do.Invoke[D1](i)
+	do.ProvideNamed(c.injector, serviceNameOf[T](), func(i do.Injector) (T, error) {
+		d1, err := resolveInjectorAs[D1](i)
 		if err != nil {
 			var zero T
 			return zero, err
 		}
-		d2, err := do.Invoke[D2](i)
+		d2, err := resolveInjectorAs[D2](i)
 		if err != nil {
 			var zero T
 			return zero, err
 		}
-		d3, err := do.Invoke[D3](i)
+		d3, err := resolveInjectorAs[D3](i)
 		if err != nil {
 			var zero T
 			return zero, err
 		}
-		d4, err := do.Invoke[D4](i)
+		d4, err := resolveInjectorAs[D4](i)
 		if err != nil {
 			var zero T
 			return zero, err
@@ -112,28 +127,28 @@ func Provide4T[T, D1, D2, D3, D4 any](c *Container, fn func(D1, D2, D3, D4) T) {
 	})
 }
 func Provide5T[T, D1, D2, D3, D4, D5 any](c *Container, fn func(D1, D2, D3, D4, D5) T) {
-	do.Provide(c.injector, func(i do.Injector) (T, error) {
-		d1, err := do.Invoke[D1](i)
+	do.ProvideNamed(c.injector, serviceNameOf[T](), func(i do.Injector) (T, error) {
+		d1, err := resolveInjectorAs[D1](i)
 		if err != nil {
 			var zero T
 			return zero, err
 		}
-		d2, err := do.Invoke[D2](i)
+		d2, err := resolveInjectorAs[D2](i)
 		if err != nil {
 			var zero T
 			return zero, err
 		}
-		d3, err := do.Invoke[D3](i)
+		d3, err := resolveInjectorAs[D3](i)
 		if err != nil {
 			var zero T
 			return zero, err
 		}
-		d4, err := do.Invoke[D4](i)
+		d4, err := resolveInjectorAs[D4](i)
 		if err != nil {
 			var zero T
 			return zero, err
 		}
-		d5, err := do.Invoke[D5](i)
+		d5, err := resolveInjectorAs[D5](i)
 		if err != nil {
 			var zero T
 			return zero, err
@@ -142,33 +157,33 @@ func Provide5T[T, D1, D2, D3, D4, D5 any](c *Container, fn func(D1, D2, D3, D4, 
 	})
 }
 func Provide6T[T, D1, D2, D3, D4, D5, D6 any](c *Container, fn func(D1, D2, D3, D4, D5, D6) T) {
-	do.Provide(c.injector, func(i do.Injector) (T, error) {
-		d1, err := do.Invoke[D1](i)
+	do.ProvideNamed(c.injector, serviceNameOf[T](), func(i do.Injector) (T, error) {
+		d1, err := resolveInjectorAs[D1](i)
 		if err != nil {
 			var zero T
 			return zero, err
 		}
-		d2, err := do.Invoke[D2](i)
+		d2, err := resolveInjectorAs[D2](i)
 		if err != nil {
 			var zero T
 			return zero, err
 		}
-		d3, err := do.Invoke[D3](i)
+		d3, err := resolveInjectorAs[D3](i)
 		if err != nil {
 			var zero T
 			return zero, err
 		}
-		d4, err := do.Invoke[D4](i)
+		d4, err := resolveInjectorAs[D4](i)
 		if err != nil {
 			var zero T
 			return zero, err
 		}
-		d5, err := do.Invoke[D5](i)
+		d5, err := resolveInjectorAs[D5](i)
 		if err != nil {
 			var zero T
 			return zero, err
 		}
-		d6, err := do.Invoke[D6](i)
+		d6, err := resolveInjectorAs[D6](i)
 		if err != nil {
 			var zero T
 			return zero, err
@@ -177,8 +192,10 @@ func Provide6T[T, D1, D2, D3, D4, D5, D6 any](c *Container, fn func(D1, D2, D3, 
 	})
 }
 
-func ProvideValueT[T any](c *Container, value T) { do.ProvideValue(c.injector, value) }
-func ResolveAs[T any](c *Container) (T, error)   { return do.Invoke[T](c.injector) }
+func ProvideValueT[T any](c *Container, value T) {
+	do.ProvideNamedValue(c.injector, serviceNameOf[T](), value)
+}
+func ResolveAs[T any](c *Container) (T, error) { return resolveInjectorAs[T](c.injector) }
 
 func ResolveOptionalAs[T any](c *Container) (value T, ok bool) {
 	option := ResolveOptionAs[T](c)
@@ -188,17 +205,10 @@ func ResolveOptionalAs[T any](c *Container) (value T, ok bool) {
 // ResolveOptionAs resolves an optional dependency as mo.Option.
 func ResolveOptionAs[T any](c *Container) mo.Option[T] {
 	value, err := ResolveAs[T](c)
-	if err != nil {
-		return mo.None[T]()
-	}
-	return mo.Some(value)
+	return mo.TupleToOption(value, err == nil)
 }
 func ResolveOrElse[T any](c *Container, fallback T) T {
-	value, ok := ResolveOptionalAs[T](c)
-	if !ok {
-		return fallback
-	}
-	return value
+	return ResolveOptionAs[T](c).OrElse(fallback)
 }
 func MustResolveAs[T any](c *Container) T {
 	result, err := ResolveAs[T](c)

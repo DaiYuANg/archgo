@@ -1,12 +1,7 @@
 package dix
 
-import "fmt"
-
-// Validate checks the module graph before runtime execution.
-// It detects import cycles and other structural issues early.
+// Validate validates the immutable app spec and current module graph.
 func (a *App) Validate() error {
-	if _, err := flattenModules(a.modules, a.profile); err != nil {
-		return fmt.Errorf("module graph validation failed: %w", err)
-	}
-	return nil
+	_, err := newBuildPlan(a)
+	return err
 }

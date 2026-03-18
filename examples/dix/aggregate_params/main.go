@@ -6,6 +6,7 @@ import (
 	"log/slog"
 
 	"github.com/DaiYuANg/arcgo/dix"
+	"github.com/DaiYuANg/arcgo/logx"
 )
 
 type DBConfig struct {
@@ -22,6 +23,11 @@ type Repository struct {
 }
 
 func main() {
+	logger, err := logx.NewDevelopment()
+	if err != nil {
+		panic(err)
+	}
+
 	module := dix.NewModule("repository",
 		dix.WithModuleProviders(
 			dix.Provider0(func() DBConfig { return DBConfig{DSN: "postgres://demo"} }),
@@ -34,16 +40,17 @@ func main() {
 		),
 	)
 
-	app := dix.New("aggregate-params", dix.WithModule(module))
-	if err := app.Build(); err != nil {
+	app := dix.New("aggregate-params", dix.WithModule(module), dix.WithLogger(logger))
+	rt, err := app.Build()
+	if err != nil {
 		panic(err)
 	}
-	if err := app.Start(context.Background()); err != nil {
+	if err := rt.Start(context.Background()); err != nil {
 		panic(err)
 	}
-	defer func() { _ = app.Stop(context.Background()) }()
+	defer func() { _ = rt.Stop(context.Background()) }()
 
-	repo, err := dix.ResolveAs[*Repository](app.Container())
+	repo, err := dix.ResolveAs[*Repository](rt.Container())
 	if err != nil {
 		panic(err)
 	}
