@@ -45,3 +45,14 @@ func TestMultiMap_CopyAndOption(t *testing.T) {
 
 	require.True(t, m.GetOption("missing").IsAbsent())
 }
+
+func TestNewMultiMapWithCapacity(t *testing.T) {
+	t.Parallel()
+
+	m := NewMultiMapWithCapacity[string, int](8)
+	m.PutAll("k", 1, 2)
+
+	require.Equal(t, 1, m.Len())
+	require.Equal(t, 2, m.ValueCount())
+	require.Equal(t, []int{1, 2}, m.Get("k"))
+}

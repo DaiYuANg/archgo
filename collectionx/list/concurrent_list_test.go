@@ -80,3 +80,13 @@ func TestConcurrentList_Merge(t *testing.T) {
 	left.Merge(right).MergeConcurrent(otherConcurrent).MergeSlice([]int{7, 8})
 	require.Equal(t, []int{1, 2, 3, 4, 5, 6, 7, 8}, left.Values())
 }
+
+func TestNewConcurrentListWithCapacity(t *testing.T) {
+	t.Parallel()
+
+	l := NewConcurrentListWithCapacity[int](8, 1, 2, 3)
+
+	require.Equal(t, []int{1, 2, 3}, l.Values())
+	require.NotNil(t, l.core)
+	require.GreaterOrEqual(t, cap(l.core.items), 8)
+}

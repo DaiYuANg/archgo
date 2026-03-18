@@ -98,3 +98,14 @@ func TestConcurrentMap_Range(t *testing.T) {
 	})
 	require.Equal(t, 3, visited)
 }
+
+func TestNewConcurrentMapWithCapacity(t *testing.T) {
+	t.Parallel()
+
+	m := NewConcurrentMapWithCapacity[string, int](8)
+	m.Set("a", 1)
+
+	value, ok := m.Get("a")
+	require.True(t, ok)
+	require.Equal(t, 1, value)
+}

@@ -15,9 +15,20 @@ type ConcurrentList[T any] struct {
 
 // NewConcurrentList creates a list and copies optional items.
 func NewConcurrentList[T any](items ...T) *ConcurrentList[T] {
-	l := &ConcurrentList[T]{}
-	l.Add(items...)
-	return l
+	return NewConcurrentListWithCapacity(len(items), items...)
+}
+
+// NewConcurrentListWithCapacity creates a list with preallocated capacity and optional items.
+func NewConcurrentListWithCapacity[T any](capacity int, items ...T) *ConcurrentList[T] {
+	if capacity < len(items) {
+		capacity = len(items)
+	}
+	if capacity <= 0 {
+		return &ConcurrentList[T]{}
+	}
+	return &ConcurrentList[T]{
+		core: NewListWithCapacity(capacity, items...),
+	}
 }
 
 // Add appends one or more items.

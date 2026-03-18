@@ -32,3 +32,13 @@ func TestMultiSet_CopySemantics(t *testing.T) {
 	all[1] = 99
 	require.Equal(t, 2, s.Count(1))
 }
+
+func TestNewMultiSetWithCapacity(t *testing.T) {
+	t.Parallel()
+
+	s := NewMultiSetWithCapacity(8, "a", "a", "b")
+
+	require.Equal(t, 3, s.Len())
+	require.Equal(t, 2, s.Count("a"))
+	require.Equal(t, 1, s.Count("b"))
+}

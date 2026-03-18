@@ -11,7 +11,18 @@ type MultiSet[T comparable] struct {
 
 // NewMultiSet creates a multiset with optional items.
 func NewMultiSet[T comparable](items ...T) *MultiSet[T] {
+	return NewMultiSetWithCapacity(len(items), items...)
+}
+
+// NewMultiSetWithCapacity creates a multiset with preallocated capacity and optional items.
+func NewMultiSetWithCapacity[T comparable](capacity int, items ...T) *MultiSet[T] {
+	if capacity < len(items) {
+		capacity = len(items)
+	}
 	s := &MultiSet[T]{}
+	if capacity > 0 {
+		s.counts = *collectionmapping.NewMapWithCapacity[T, int](capacity)
+	}
 	s.Add(items...)
 	return s
 }

@@ -27,3 +27,11 @@ func TestOrderedSet_RemoveReindex(t *testing.T) {
 	require.True(t, ok)
 	require.Equal(t, "c", item)
 }
+
+func TestNewOrderedSetWithCapacity(t *testing.T) {
+	t.Parallel()
+
+	s := NewOrderedSetWithCapacity(8, "a", "b", "a", "c")
+
+	require.Equal(t, []string{"a", "b", "c"}, s.Values())
+}

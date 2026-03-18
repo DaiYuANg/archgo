@@ -34,6 +34,10 @@ func NewMap[K comparable, V any]() Map[K, V] {
 	return mapping.NewMap[K, V]()
 }
 
+func NewMapWithCapacity[K comparable, V any](capacity int) Map[K, V] {
+	return mapping.NewMapWithCapacity[K, V](capacity)
+}
+
 func NewMapFrom[K comparable, V any](source map[K]V) Map[K, V] {
 	return mapping.NewMapFrom(source)
 }
@@ -49,6 +53,10 @@ type ConcurrentMap[K comparable, V any] interface {
 
 func NewConcurrentMap[K comparable, V any]() ConcurrentMap[K, V] {
 	return mapping.NewConcurrentMap[K, V]()
+}
+
+func NewConcurrentMapWithCapacity[K comparable, V any](capacity int) ConcurrentMap[K, V] {
+	return mapping.NewConcurrentMapWithCapacity[K, V](capacity)
 }
 
 type biMapReadable[K comparable, V comparable] interface {
@@ -111,6 +119,10 @@ func NewOrderedMap[K comparable, V any]() OrderedMap[K, V] {
 	return mapping.NewOrderedMap[K, V]()
 }
 
+func NewOrderedMapWithCapacity[K comparable, V any](capacity int) OrderedMap[K, V] {
+	return mapping.NewOrderedMapWithCapacity[K, V](capacity)
+}
+
 type multiMapReadable[K comparable, V any] interface {
 	Get(key K) []V
 	GetOption(key K) mo.Option[[]V]
@@ -141,6 +153,10 @@ func NewMultiMap[K comparable, V any]() MultiMap[K, V] {
 	return mapping.NewMultiMap[K, V]()
 }
 
+func NewMultiMapWithCapacity[K comparable, V any](capacity int) MultiMap[K, V] {
+	return mapping.NewMultiMapWithCapacity[K, V](capacity)
+}
+
 func NewMultiMapFromAll[K comparable, V any](source map[K][]V) MultiMap[K, V] {
 	return mapping.NewMultiMapFromAll(source)
 }
@@ -154,6 +170,10 @@ type ConcurrentMultiMap[K comparable, V any] interface {
 
 func NewConcurrentMultiMap[K comparable, V any]() ConcurrentMultiMap[K, V] {
 	return mapping.NewConcurrentMultiMap[K, V]()
+}
+
+func NewConcurrentMultiMapWithCapacity[K comparable, V any](capacity int) ConcurrentMultiMap[K, V] {
+	return mapping.NewConcurrentMultiMapWithCapacity[K, V](capacity)
 }
 
 type tableReadable[R comparable, C comparable, V any] interface {

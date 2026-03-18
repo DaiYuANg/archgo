@@ -13,14 +13,22 @@ type Map[K comparable, V any] struct {
 
 // NewMap creates an empty map.
 func NewMap[K comparable, V any]() *Map[K, V] {
+	return NewMapWithCapacity[K, V](0)
+}
+
+// NewMapWithCapacity creates an empty map with preallocated capacity.
+func NewMapWithCapacity[K comparable, V any](capacity int) *Map[K, V] {
+	if capacity < 0 {
+		capacity = 0
+	}
 	return &Map[K, V]{
-		items: make(map[K]V),
+		items: make(map[K]V, capacity),
 	}
 }
 
 // NewMapFrom creates a map from source and copies all entries.
 func NewMapFrom[K comparable, V any](source map[K]V) *Map[K, V] {
-	m := &Map[K, V]{}
+	m := NewMapWithCapacity[K, V](len(source))
 	m.SetAll(source)
 	return m
 }

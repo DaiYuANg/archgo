@@ -74,3 +74,14 @@ func TestMap_RangeStop(t *testing.T) {
 	})
 	require.Equal(t, 1, visited)
 }
+
+func TestNewMapWithCapacity(t *testing.T) {
+	t.Parallel()
+
+	m := NewMapWithCapacity[string, int](8)
+	m.Set("a", 1)
+	m.Set("b", 2)
+
+	require.Equal(t, 2, m.Len())
+	require.Equal(t, 1, m.GetOrDefault("a", 0))
+}

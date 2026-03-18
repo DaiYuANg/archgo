@@ -66,3 +66,14 @@ func TestSet_Merge(t *testing.T) {
 	left.Merge(right).MergeSlice([]int{3, 4, 5})
 	require.ElementsMatch(t, []int{1, 2, 3, 4, 5}, left.Values())
 }
+
+func TestNewSetWithCapacity(t *testing.T) {
+	t.Parallel()
+
+	s := NewSetWithCapacity(8, 1, 2, 2, 3)
+
+	require.Equal(t, 3, s.Len())
+	require.True(t, s.Contains(1))
+	require.True(t, s.Contains(2))
+	require.True(t, s.Contains(3))
+}

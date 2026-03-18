@@ -87,3 +87,12 @@ func TestList_Merge(t *testing.T) {
 	left.Merge(right).MergeSlice([]int{5, 6})
 	require.Equal(t, []int{1, 2, 3, 4, 5, 6}, left.Values())
 }
+
+func TestNewListWithCapacity(t *testing.T) {
+	t.Parallel()
+
+	l := NewListWithCapacity[int](8, 1, 2, 3)
+
+	require.Equal(t, []int{1, 2, 3}, l.Values())
+	require.GreaterOrEqual(t, cap(l.items), 8)
+}

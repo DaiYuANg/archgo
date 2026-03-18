@@ -39,6 +39,10 @@ func NewList[T any](items ...T) List[T] {
 	return list.NewList(items...)
 }
 
+func NewListWithCapacity[T any](capacity int, items ...T) List[T] {
+	return list.NewListWithCapacity(capacity, items...)
+}
+
 type ConcurrentList[T any] interface {
 	listReadable[T]
 	listWritable[T]
@@ -51,6 +55,10 @@ type ConcurrentList[T any] interface {
 
 func NewConcurrentList[T any](items ...T) ConcurrentList[T] {
 	return list.NewConcurrentList(items...)
+}
+
+func NewConcurrentListWithCapacity[T any](capacity int, items ...T) ConcurrentList[T] {
+	return list.NewConcurrentListWithCapacity(capacity, items...)
 }
 
 type dequeReadable[T any] interface {

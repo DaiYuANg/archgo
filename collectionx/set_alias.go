@@ -31,6 +31,10 @@ func NewSet[T comparable](items ...T) Set[T] {
 	return set.NewSet(items...)
 }
 
+func NewSetWithCapacity[T comparable](capacity int, items ...T) Set[T] {
+	return set.NewSetWithCapacity(capacity, items...)
+}
+
 type ConcurrentSet[T comparable] interface {
 	setReadable[T]
 	setWritable[T]
@@ -44,6 +48,10 @@ type ConcurrentSet[T comparable] interface {
 
 func NewConcurrentSet[T comparable](items ...T) ConcurrentSet[T] {
 	return set.NewConcurrentSet(items...)
+}
+
+func NewConcurrentSetWithCapacity[T comparable](capacity int, items ...T) ConcurrentSet[T] {
+	return set.NewConcurrentSetWithCapacity(capacity, items...)
 }
 
 type multiSetReadable[T comparable] interface {
@@ -75,6 +83,10 @@ func NewMultiSet[T comparable](items ...T) MultiSet[T] {
 	return set.NewMultiSet(items...)
 }
 
+func NewMultiSetWithCapacity[T comparable](capacity int, items ...T) MultiSet[T] {
+	return set.NewMultiSetWithCapacity(capacity, items...)
+}
+
 type orderedSetReadable[T comparable] interface {
 	setReadable[T]
 	At(pos int) (T, bool)
@@ -89,4 +101,8 @@ type OrderedSet[T comparable] interface {
 
 func NewOrderedSet[T comparable](items ...T) OrderedSet[T] {
 	return set.NewOrderedSet(items...)
+}
+
+func NewOrderedSetWithCapacity[T comparable](capacity int, items ...T) OrderedSet[T] {
+	return set.NewOrderedSetWithCapacity(capacity, items...)
 }

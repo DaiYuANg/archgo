@@ -15,7 +15,21 @@ type List[T any] struct {
 
 // NewList creates a list and copies optional items.
 func NewList[T any](items ...T) *List[T] {
-	l := &List[T]{}
+	return NewListWithCapacity(len(items), items...)
+}
+
+// NewListWithCapacity creates a list with preallocated capacity and optional items.
+func NewListWithCapacity[T any](capacity int, items ...T) *List[T] {
+	if capacity < len(items) {
+		capacity = len(items)
+	}
+	if capacity <= 0 {
+		return &List[T]{}
+	}
+
+	l := &List[T]{
+		items: make([]T, 0, capacity),
+	}
 	l.Add(items...)
 	return l
 }

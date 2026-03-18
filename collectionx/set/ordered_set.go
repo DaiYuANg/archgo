@@ -15,7 +15,20 @@ type OrderedSet[T comparable] struct {
 
 // NewOrderedSet creates an ordered set with optional items.
 func NewOrderedSet[T comparable](items ...T) *OrderedSet[T] {
+	return NewOrderedSetWithCapacity(len(items), items...)
+}
+
+// NewOrderedSetWithCapacity creates an ordered set with preallocated capacity and optional items.
+func NewOrderedSetWithCapacity[T comparable](capacity int, items ...T) *OrderedSet[T] {
+	if capacity < len(items) {
+		capacity = len(items)
+	}
 	s := &OrderedSet[T]{}
+	if capacity > 0 {
+		s.order = *collectionlist.NewListWithCapacity[T](capacity)
+		s.items = *collectionmapping.NewMapWithCapacity[T, struct{}](capacity)
+		s.index = *collectionmapping.NewMapWithCapacity[T, int](capacity)
+	}
 	s.Add(items...)
 	return s
 }
@@ -120,10 +133,10 @@ func (s *OrderedSet[T]) Range(fn func(item T) bool) {
 
 // Clone returns a shallow copy.
 func (s *OrderedSet[T]) Clone() *OrderedSet[T] {
-	out := &OrderedSet[T]{}
 	if s == nil {
-		return out
+		return NewOrderedSet[T]()
 	}
+	out := NewOrderedSetWithCapacity[T](s.order.Len())
 	out.order.Add(s.order.Values()...)
 	out.items.SetAll(s.items.All())
 	out.index.SetAll(s.index.All())

@@ -13,9 +13,20 @@ type ConcurrentSet[T comparable] struct {
 
 // NewConcurrentSet creates a new concurrent set.
 func NewConcurrentSet[T comparable](items ...T) *ConcurrentSet[T] {
-	s := &ConcurrentSet[T]{}
-	s.Add(items...)
-	return s
+	return NewConcurrentSetWithCapacity(len(items), items...)
+}
+
+// NewConcurrentSetWithCapacity creates a new concurrent set with preallocated capacity.
+func NewConcurrentSetWithCapacity[T comparable](capacity int, items ...T) *ConcurrentSet[T] {
+	if capacity < len(items) {
+		capacity = len(items)
+	}
+	if capacity <= 0 {
+		return &ConcurrentSet[T]{}
+	}
+	return &ConcurrentSet[T]{
+		core: NewSetWithCapacity[T](capacity, items...),
+	}
 }
 
 // Add inserts one or more items.

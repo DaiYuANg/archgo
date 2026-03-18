@@ -15,8 +15,13 @@ type ConcurrentMultiMap[K comparable, V any] struct {
 
 // NewConcurrentMultiMap creates an empty concurrent multimap.
 func NewConcurrentMultiMap[K comparable, V any]() *ConcurrentMultiMap[K, V] {
+	return NewConcurrentMultiMapWithCapacity[K, V](0)
+}
+
+// NewConcurrentMultiMapWithCapacity creates an empty concurrent multimap with preallocated key capacity.
+func NewConcurrentMultiMapWithCapacity[K comparable, V any](capacity int) *ConcurrentMultiMap[K, V] {
 	return &ConcurrentMultiMap[K, V]{
-		core: NewMultiMap[K, V](),
+		core: NewMultiMapWithCapacity[K, V](capacity),
 	}
 }
 
@@ -212,7 +217,7 @@ func (m *ConcurrentMultiMap[K, V]) ensureInitLocked() {
 
 // NewMultiMapFromAll creates a multimap from a built-in deep map.
 func NewMultiMapFromAll[K comparable, V any](source map[K][]V) *MultiMap[K, V] {
-	out := NewMultiMap[K, V]()
+	out := NewMultiMapWithCapacity[K, V](len(source))
 	for key, values := range source {
 		out.Set(key, values...)
 	}

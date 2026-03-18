@@ -49,3 +49,13 @@ func TestConcurrentMultiMap_OptionAndSnapshot(t *testing.T) {
 	m.Put("a", 4)
 	require.Equal(t, []int{1, 2, 3}, snapshot.Get("a"))
 }
+
+func TestNewConcurrentMultiMapWithCapacity(t *testing.T) {
+	t.Parallel()
+
+	m := NewConcurrentMultiMapWithCapacity[string, int](8)
+	m.PutAll("a", 1, 2)
+
+	require.Equal(t, 1, m.Len())
+	require.Equal(t, 2, m.ValueCount())
+}

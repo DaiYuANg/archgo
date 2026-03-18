@@ -15,8 +15,13 @@ type ConcurrentMap[K comparable, V any] struct {
 
 // NewConcurrentMap creates an empty concurrent map.
 func NewConcurrentMap[K comparable, V any]() *ConcurrentMap[K, V] {
+	return NewConcurrentMapWithCapacity[K, V](0)
+}
+
+// NewConcurrentMapWithCapacity creates an empty concurrent map with preallocated capacity.
+func NewConcurrentMapWithCapacity[K comparable, V any](capacity int) *ConcurrentMap[K, V] {
 	return &ConcurrentMap[K, V]{
-		core: NewMap[K, V](),
+		core: NewMapWithCapacity[K, V](capacity),
 	}
 }
 

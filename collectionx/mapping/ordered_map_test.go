@@ -35,3 +35,14 @@ func TestOrderedMap_DeleteAndAt(t *testing.T) {
 	require.Equal(t, 3, key)
 	require.Equal(t, "c", value)
 }
+
+func TestNewOrderedMapWithCapacity(t *testing.T) {
+	t.Parallel()
+
+	m := NewOrderedMapWithCapacity[int, string](8)
+	m.Set(1, "a")
+	m.Set(2, "b")
+
+	require.Equal(t, []int{1, 2}, m.Keys())
+	require.Equal(t, []string{"a", "b"}, m.Values())
+}

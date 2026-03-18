@@ -15,7 +15,17 @@ type MultiMap[K comparable, V any] struct {
 
 // NewMultiMap creates an empty multimap.
 func NewMultiMap[K comparable, V any]() *MultiMap[K, V] {
-	return &MultiMap[K, V]{}
+	return NewMultiMapWithCapacity[K, V](0)
+}
+
+// NewMultiMapWithCapacity creates an empty multimap with preallocated key capacity.
+func NewMultiMapWithCapacity[K comparable, V any](capacity int) *MultiMap[K, V] {
+	if capacity <= 0 {
+		return &MultiMap[K, V]{}
+	}
+	return &MultiMap[K, V]{
+		items: *NewMapWithCapacity[K, []V](capacity),
+	}
 }
 
 // Put appends one value for key.

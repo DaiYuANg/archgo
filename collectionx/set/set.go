@@ -10,7 +10,18 @@ type Set[T comparable] struct {
 
 // NewSet creates a new set and fills it with optional items.
 func NewSet[T comparable](items ...T) *Set[T] {
+	return NewSetWithCapacity(len(items), items...)
+}
+
+// NewSetWithCapacity creates a new set with preallocated capacity and optional items.
+func NewSetWithCapacity[T comparable](capacity int, items ...T) *Set[T] {
+	if capacity < len(items) {
+		capacity = len(items)
+	}
 	s := &Set[T]{}
+	if capacity > 0 {
+		s.items = *collectionmapping.NewMapWithCapacity[T, struct{}](capacity)
+	}
 	s.Add(items...)
 	return s
 }

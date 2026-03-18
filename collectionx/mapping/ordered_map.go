@@ -17,7 +17,19 @@ type OrderedMap[K comparable, V any] struct {
 
 // NewOrderedMap creates an empty ordered map.
 func NewOrderedMap[K comparable, V any]() *OrderedMap[K, V] {
-	return &OrderedMap[K, V]{}
+	return NewOrderedMapWithCapacity[K, V](0)
+}
+
+// NewOrderedMapWithCapacity creates an empty ordered map with preallocated capacity.
+func NewOrderedMapWithCapacity[K comparable, V any](capacity int) *OrderedMap[K, V] {
+	if capacity <= 0 {
+		return &OrderedMap[K, V]{}
+	}
+	return &OrderedMap[K, V]{
+		order: *collectionlist.NewListWithCapacity[K](capacity),
+		items: *NewMapWithCapacity[K, V](capacity),
+		index: *NewMapWithCapacity[K, int](capacity),
+	}
 }
 
 // Set inserts or updates key-value pair.
@@ -156,10 +168,10 @@ func (m *OrderedMap[K, V]) Range(fn func(key K, value V) bool) {
 
 // Clone returns a shallow copy.
 func (m *OrderedMap[K, V]) Clone() *OrderedMap[K, V] {
-	out := NewOrderedMap[K, V]()
 	if m == nil {
-		return out
+		return NewOrderedMap[K, V]()
 	}
+	out := NewOrderedMapWithCapacity[K, V](m.order.Len())
 	out.order.Add(m.order.Values()...)
 	out.items.SetAll(m.items.All())
 	out.index.SetAll(m.index.All())
