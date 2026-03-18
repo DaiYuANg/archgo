@@ -35,8 +35,7 @@ func (c *Container) Raw() do.Injector { return c.injector }
 func (c *Container) Injector() do.Injector { return c.injector }
 
 func (c *Container) Shutdown(ctx context.Context) error {
-	c.injector.Shutdown()
-	return nil
+	return c.injector.ShutdownWithContext(ctx)
 }
 
 func ProvideT[T any](c *Container, fn func() T) {

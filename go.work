@@ -24,6 +24,7 @@ use (
 	./examples/authx
 	./examples/clientx
 	./examples/collectionx
+	./examples/dix
 	./examples/eventx
 	./examples/httpx
 	./examples/logx

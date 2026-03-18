@@ -40,7 +40,7 @@ func main() {
 			if err := dix.BindAlias[*englishGreeter, Greeter](c); err != nil {
 				return err
 			}
-			if err := dix.BindNamedAlias[*englishGreeter, Greeter](c, "greeter.en.alias"); err != nil {
+			if err := dix.BindNamedAlias[*englishGreeter, Greeter](c, "greeter.en.alias", "greeter"); err != nil {
 				return err
 			}
 			return nil
