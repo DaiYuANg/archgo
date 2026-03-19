@@ -46,7 +46,7 @@ func (m StructMapper[E]) ScanRows(rows *sql.Rows) ([]E, error) {
 
 func (m StructMapper[E]) scanPlan(columns []string) (*scanPlan, error) {
 	signature := scanSignature(columns)
-	if cached, ok := m.meta.scanPlans.Get(signature); ok {
+	if cached, ok := m.meta.scanPlans.Peek(signature); ok {
 		return cached, nil
 	}
 
@@ -60,8 +60,11 @@ func (m StructMapper[E]) scanPlan(columns []string) (*scanPlan, error) {
 	}
 
 	plan := &scanPlan{fields: fields.Values()}
-	actual, _ := m.meta.scanPlans.GetOrStore(signature, plan)
-	return actual, nil
+	if cached, ok := m.meta.scanPlans.Peek(signature); ok {
+		return cached, nil
+	}
+	m.meta.scanPlans.Set(signature, plan)
+	return plan, nil
 }
 
 func (m StructMapper[E]) scanCurrentRow(rows *sql.Rows, plan *scanPlan) (E, error) {

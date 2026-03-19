@@ -5,9 +5,11 @@ import (
 	"database/sql"
 	"fmt"
 	"io/fs"
-	"sort"
 	"strings"
 	"time"
+
+	"github.com/DaiYuANg/arcgo/collectionx"
+	"github.com/pressly/goose/v3"
 )
 
 type RunReport struct {
@@ -18,8 +20,7 @@ func (r *Runner) EnsureHistory(ctx context.Context) error {
 	if r == nil || r.db == nil {
 		return sql.ErrConnDone
 	}
-	_, err := r.db.ExecContext(ctx, historyTableDDL(r.dialect, r.options.HistoryTable))
-	return err
+	return newHistoryStore(r.dialect, r.options.HistoryTable, collectionx.NewMap[int64, AppliedRecord]()).CreateVersionTable(ctx, r.db)
 }
 
 func (r *Runner) Applied(ctx context.Context) ([]AppliedRecord, error) {
@@ -63,39 +64,57 @@ func (r *Runner) Applied(ctx context.Context) ([]AppliedRecord, error) {
 }
 
 func (r *Runner) PendingGo(ctx context.Context, migrations ...Migration) ([]Migration, error) {
+	bundle, err := r.newRunnerEngineForGo(migrations)
+	if err != nil {
+		return nil, err
+	}
+	if bundle == nil || bundle.engine == nil {
+		return nil, nil
+	}
+	if _, err := bundle.engine.HasPending(ctx); err != nil {
+		return nil, err
+	}
+
+	statuses, err := bundle.engine.Status(ctx)
+	if err != nil {
+		return nil, err
+	}
 	applied, err := r.Applied(ctx)
 	if err != nil {
 		return nil, err
 	}
 	indexed := indexAppliedRecords(applied)
-	pending := make([]Migration, 0, len(migrations))
-	sorted := append([]Migration(nil), migrations...)
-	sort.Slice(sorted, func(i, j int) bool {
-		if sorted[i].Version() != sorted[j].Version() {
-			return sorted[i].Version() < sorted[j].Version()
+	byVersion := collectionx.NewMapWithCapacity[int64, Migration](len(migrations))
+	for _, migration := range migrations {
+		version, err := parseNumericVersion(migration.Version())
+		if err != nil {
+			return nil, err
 		}
-		return sorted[i].Description() < sorted[j].Description()
-	})
+		byVersion.Set(version, migration)
+	}
 
-	for _, migration := range sorted {
-		key := appliedRecordKey(KindGo, migration.Version(), migration.Description())
-		checksum := checksumGoMigration(migration)
-		if record, ok := indexed[key]; ok {
-			if r.options.ValidateHash && record.Checksum != checksum {
-				return nil, fmt.Errorf("dbx/migrate: go migration checksum mismatch for version %s", migration.Version())
-			}
+	pending := collectionx.NewListWithCapacity[Migration](len(migrations))
+	for _, status := range statuses {
+		migration, ok := byVersion.Get(status.Source.Version)
+		if !ok {
 			continue
 		}
-		if !r.options.AllowOutOfOrder && hasAppliedNewerVersion(applied, migration.Version()) {
-			return nil, fmt.Errorf("dbx/migrate: out-of-order go migration version %s", migration.Version())
+		record, ok := bundle.metaByVersion.Get(status.Source.Version)
+		if ok && r.options.ValidateHash && status.State != goose.StatePending {
+			existing, exists := indexed[appliedRecordKey(record.Kind, record.Version, record.Description)]
+			if exists && existing.Checksum != record.Checksum {
+				return nil, fmt.Errorf("dbx/migrate: go migration checksum mismatch for version %s", record.Version)
+			}
 		}
-		pending = append(pending, migration)
+		if status.State == goose.StatePending {
+			pending.Add(migration)
+		}
 	}
-	return pending, nil
+	return pending.Values(), nil
 }
 
 func (r *Runner) PendingSQL(ctx context.Context, source FileSource) ([]SQLMigration, error) {
-	loaded, err := loadSQLMigrations(source)
+	bundle, repeatables, err := r.newRunnerEngineForSQL(source)
 	if err != nil {
 		return nil, err
 	}
@@ -104,104 +123,147 @@ func (r *Runner) PendingSQL(ctx context.Context, source FileSource) ([]SQLMigrat
 		return nil, err
 	}
 	indexed := indexAppliedRecords(applied)
-	pending := make([]SQLMigration, 0, len(loaded))
+	pending := collectionx.NewList[SQLMigration]()
 
-	for _, migration := range loaded {
+	if bundle != nil && bundle.engine != nil {
+		if _, err := bundle.engine.HasPending(ctx); err != nil {
+			return nil, err
+		}
+		statuses, err := bundle.engine.Status(ctx)
+		if err != nil {
+			return nil, err
+		}
+
+		versionedByVersion := collectionx.NewMapWithCapacity[int64, SQLMigration](bundle.metaByVersion.Len())
+		loaded, err := loadSQLMigrations(source)
+		if err != nil {
+			return nil, err
+		}
+		for _, migration := range loaded {
+			if migration.Repeatable {
+				continue
+			}
+			version, err := parseNumericVersion(migration.Version)
+			if err != nil {
+				return nil, err
+			}
+			versionedByVersion.Set(version, migration.SQLMigration)
+		}
+
+		for _, status := range statuses {
+			migration, ok := versionedByVersion.Get(status.Source.Version)
+			if !ok {
+				continue
+			}
+			record, ok := bundle.metaByVersion.Get(status.Source.Version)
+			if ok && r.options.ValidateHash && status.State != goose.StatePending {
+				existing, exists := indexed[appliedRecordKey(record.Kind, record.Version, record.Description)]
+				if exists && existing.Checksum != record.Checksum {
+					return nil, fmt.Errorf("dbx/migrate: sql migration checksum mismatch for version %s", record.Version)
+				}
+			}
+			if status.State == goose.StatePending {
+				pending.Add(migration)
+			}
+		}
+	}
+
+	for _, migration := range repeatables {
 		key := appliedRecordKey(migration.kind, migration.Version, migration.Description)
 		record, ok := indexed[key]
 		if ok {
-			if migration.kind == KindRepeatable {
-				if record.Checksum != migration.checksum {
-					pending = append(pending, migration.SQLMigration)
-				}
-				continue
-			}
-			if r.options.ValidateHash && record.Checksum != migration.checksum {
-				return nil, fmt.Errorf("dbx/migrate: sql migration checksum mismatch for version %s", migration.Version)
+			if record.Checksum != migration.checksum {
+				pending.Add(migration.SQLMigration)
 			}
 			continue
 		}
-		if !migration.Repeatable && !r.options.AllowOutOfOrder && hasAppliedNewerVersion(applied, migration.Version) {
-			return nil, fmt.Errorf("dbx/migrate: out-of-order sql migration version %s", migration.Version)
-		}
-		pending = append(pending, migration.SQLMigration)
+		pending.Add(migration.SQLMigration)
 	}
-	return pending, nil
+	return pending.Values(), nil
 }
 
 func (r *Runner) UpGo(ctx context.Context, migrations ...Migration) (RunReport, error) {
-	pending, err := r.PendingGo(ctx, migrations...)
+	bundle, err := r.newRunnerEngineForGo(migrations)
 	if err != nil {
 		return RunReport{}, err
 	}
+	if bundle == nil || bundle.engine == nil {
+		return RunReport{}, nil
+	}
 
-	report := RunReport{Applied: make([]AppliedRecord, 0, len(pending))}
-	for _, migration := range pending {
-		applied, err := r.applyGoMigration(ctx, migration)
+	results, err := bundle.engine.Up(ctx)
+	if err != nil {
+		return RunReport{}, err
+	}
+	applied, err := r.Applied(ctx)
+	if err != nil {
+		return RunReport{}, err
+	}
+	report := RunReport{Applied: make([]AppliedRecord, 0, len(results))}
+	for _, result := range results {
+		record, ok := bundle.metaByVersion.Get(result.Source.Version)
+		if !ok {
+			continue
+		}
+		current, err := appliedRecordForVersion(applied, record)
 		if err != nil {
 			return report, err
 		}
-		report.Applied = append(report.Applied, applied)
+		report.Applied = append(report.Applied, current)
 	}
 	return report, nil
 }
 
 func (r *Runner) UpSQL(ctx context.Context, source FileSource) (RunReport, error) {
-	loaded, err := loadSQLMigrations(source)
+	bundle, repeatables, err := r.newRunnerEngineForSQL(source)
 	if err != nil {
 		return RunReport{}, err
 	}
-	pending, err := r.PendingSQL(ctx, source)
-	if err != nil {
-		return RunReport{}, err
-	}
-	loadedByKey := make(map[string]loadedSQLMigration, len(loaded))
-	for _, migration := range loaded {
-		loadedByKey[appliedRecordKey(migration.kind, migration.Version, migration.Description)] = migration
-	}
+	report := RunReport{Applied: make([]AppliedRecord, 0, 8)}
+	var applied []AppliedRecord
 
-	report := RunReport{Applied: make([]AppliedRecord, 0, len(pending))}
-	for _, migration := range pending {
-		loadedMigration, ok := loadedByKey[appliedRecordKey(kindForSQLMigration(migration), migration.Version, migration.Description)]
-		if !ok {
-			return report, fmt.Errorf("dbx/migrate: loaded sql migration not found for version %s", migration.Version)
-		}
-		applied, err := r.applySQLMigration(ctx, loadedMigration)
+	if bundle != nil && bundle.engine != nil {
+		results, err := bundle.engine.Up(ctx)
 		if err != nil {
 			return report, err
 		}
-		report.Applied = append(report.Applied, applied)
+		applied, err = r.Applied(ctx)
+		if err != nil {
+			return report, err
+		}
+		for _, result := range results {
+			record, ok := bundle.metaByVersion.Get(result.Source.Version)
+			if !ok {
+				continue
+			}
+			current, err := appliedRecordForVersion(applied, record)
+			if err != nil {
+				return report, err
+			}
+			report.Applied = append(report.Applied, current)
+		}
+	}
+
+	if applied == nil {
+		applied, err = r.Applied(ctx)
+		if err != nil {
+			return report, err
+		}
+	}
+	indexed := indexAppliedRecords(applied)
+	for _, migration := range repeatables {
+		key := appliedRecordKey(migration.kind, migration.Version, migration.Description)
+		record, ok := indexed[key]
+		if ok && record.Checksum == migration.checksum {
+			continue
+		}
+		appliedRecord, err := r.applySQLMigration(ctx, migration)
+		if err != nil {
+			return report, err
+		}
+		report.Applied = append(report.Applied, appliedRecord)
 	}
 	return report, nil
-}
-
-func (r *Runner) applyGoMigration(ctx context.Context, migration Migration) (AppliedRecord, error) {
-	tx, err := r.db.BeginTx(ctx, nil)
-	if err != nil {
-		return AppliedRecord{}, err
-	}
-
-	if err := migration.Up(ctx, tx); err != nil {
-		_ = tx.Rollback()
-		return AppliedRecord{}, err
-	}
-
-	record := AppliedRecord{
-		Version:     migration.Version(),
-		Description: migration.Description(),
-		Kind:        KindGo,
-		AppliedAt:   time.Now().UTC(),
-		Checksum:    checksumGoMigration(migration),
-		Success:     true,
-	}
-	if err := replaceAppliedRecord(ctx, tx, r.dialect, r.options.HistoryTable, record); err != nil {
-		_ = tx.Rollback()
-		return AppliedRecord{}, err
-	}
-	if err := tx.Commit(); err != nil {
-		return AppliedRecord{}, err
-	}
-	return record, nil
 }
 
 func (r *Runner) applySQLMigration(ctx context.Context, migration loadedSQLMigration) (AppliedRecord, error) {
@@ -287,3 +349,6 @@ func kindForSQLMigration(migration SQLMigration) Kind {
 	}
 	return KindSQL
 }
+
+
+

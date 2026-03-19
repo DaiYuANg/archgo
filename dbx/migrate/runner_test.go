@@ -19,18 +19,24 @@ func (testDialect) QuoteIdent(ident string) string                       { retur
 func (testDialect) RenderLimitOffset(limit, offset *int) (string, error) { return "", nil }
 
 func TestRunnerUpGoCreatesHistoryAndAppliesMigration(t *testing.T) {
+	historyDDL := historyTableDDL(testDialect{}, "schema_history")
+	listSQL := historyRowsForStatusSQL(testDialect{}, "schema_history")
+	appliedSQL := appliedRecordsSQL(testDialect{}, "schema_history")
+	checksum := checksumString("go|1|create sample")
+
 	sqlDB, recorder, cleanup, err := testsql.Open(testsql.Plan{
 		Execs: []testsql.ExecPlan{
-			{SQL: `CREATE TABLE IF NOT EXISTS "schema_history" ("version" VARCHAR(255) NOT NULL, "description" VARCHAR(255) NOT NULL, "kind" VARCHAR(32) NOT NULL, "checksum" VARCHAR(128) NOT NULL, "success" BOOLEAN NOT NULL, "applied_at" VARCHAR(64) NOT NULL, PRIMARY KEY ("version", "kind", "description"))`},
 			{SQL: `CREATE TABLE sample (id INTEGER PRIMARY KEY)`},
 			{SQL: `DELETE FROM "schema_history" WHERE "version" = ? AND "kind" = ? AND "description" = ?`},
 			{SQL: `INSERT INTO "schema_history" ("version", "description", "kind", "checksum", "success", "applied_at") VALUES (?, ?, ?, ?, ?, ?)`},
+			{SQL: historyDDL},
 		},
-		Queries: []testsql.QueryPlan{{
-			SQL:     `SELECT "version", "description", "kind", "applied_at", "checksum", "success" FROM "schema_history" ORDER BY "applied_at", "version", "description"`,
-			Columns: []string{"version", "description", "kind", "applied_at", "checksum", "success"},
-			Rows:    nil,
-		}},
+		Queries: []testsql.QueryPlan{
+			{SQL: listSQL, Args: []driver.Value{"repeatable"}, Columns: []string{"version", "description", "kind", "applied_at", "success"}, Rows: nil},
+			{SQL: listSQL, Args: []driver.Value{"repeatable"}, Columns: []string{"version", "description", "kind", "applied_at", "success"}, Rows: nil},
+			{SQL: listSQL, Args: []driver.Value{"repeatable"}, Columns: []string{"version", "description", "kind", "applied_at", "success"}, Rows: nil},
+			{SQL: appliedSQL, Columns: []string{"version", "description", "kind", "applied_at", "checksum", "success"}, Rows: [][]driver.Value{{"1", "create sample", "go", "2026-03-20T10:00:00Z", checksum, true}}},
+		},
 	})
 	if err != nil {
 		t.Fatalf("testsql.Open returned error: %v", err)
@@ -51,11 +57,11 @@ func TestRunnerUpGoCreatesHistoryAndAppliesMigration(t *testing.T) {
 	if len(recorder.Execs) != 4 {
 		t.Fatalf("unexpected exec count: %d", len(recorder.Execs))
 	}
-	if len(recorder.Execs[3].Args) != 6 {
-		t.Fatalf("unexpected history insert args: %#v", recorder.Execs[3].Args)
+	if len(recorder.Execs[2].Args) != 6 {
+		t.Fatalf("unexpected history insert args: %#v", recorder.Execs[2].Args)
 	}
-	if got := recorder.Execs[3].Args[:5]; !equalDriverValues(got, []driver.Value{"1", "create sample", "go", checksumString("go|1|create sample"), true}) {
-		t.Fatalf("unexpected history insert args: %#v", recorder.Execs[3].Args)
+	if got := recorder.Execs[2].Args[:5]; !equalDriverValues(got, []driver.Value{"1", "create sample", "go", checksum, true}) {
+		t.Fatalf("unexpected history insert args: %#v", recorder.Execs[2].Args)
 	}
 }
 
@@ -90,18 +96,24 @@ func TestRunnerPendingSQLTracksRepeatableChecksum(t *testing.T) {
 }
 
 func TestRunnerUpSQLAppliesVersionedFiles(t *testing.T) {
+	historyDDL := historyTableDDL(testDialect{}, "schema_history")
+	listSQL := historyRowsForStatusSQL(testDialect{}, "schema_history")
+	appliedSQL := appliedRecordsSQL(testDialect{}, "schema_history")
+	checksum := checksumString(strings.Join([]string{"sql", "1", "create logs", "CREATE TABLE logs (id INTEGER PRIMARY KEY)", ""}, "\n--dbx-migrate--\n"))
+
 	sqlDB, _, cleanup, err := testsql.Open(testsql.Plan{
 		Execs: []testsql.ExecPlan{
-			{SQL: `CREATE TABLE IF NOT EXISTS "schema_history" ("version" VARCHAR(255) NOT NULL, "description" VARCHAR(255) NOT NULL, "kind" VARCHAR(32) NOT NULL, "checksum" VARCHAR(128) NOT NULL, "success" BOOLEAN NOT NULL, "applied_at" VARCHAR(64) NOT NULL, PRIMARY KEY ("version", "kind", "description"))`},
 			{SQL: `CREATE TABLE logs (id INTEGER PRIMARY KEY)`},
 			{SQL: `DELETE FROM "schema_history" WHERE "version" = ? AND "kind" = ? AND "description" = ?`},
 			{SQL: `INSERT INTO "schema_history" ("version", "description", "kind", "checksum", "success", "applied_at") VALUES (?, ?, ?, ?, ?, ?)`},
+			{SQL: historyDDL},
 		},
-		Queries: []testsql.QueryPlan{{
-			SQL:     `SELECT "version", "description", "kind", "applied_at", "checksum", "success" FROM "schema_history" ORDER BY "applied_at", "version", "description"`,
-			Columns: []string{"version", "description", "kind", "applied_at", "checksum", "success"},
-			Rows:    nil,
-		}},
+		Queries: []testsql.QueryPlan{
+			{SQL: listSQL, Args: []driver.Value{"repeatable"}, Columns: []string{"version", "description", "kind", "applied_at", "success"}, Rows: nil},
+			{SQL: listSQL, Args: []driver.Value{"repeatable"}, Columns: []string{"version", "description", "kind", "applied_at", "success"}, Rows: nil},
+			{SQL: listSQL, Args: []driver.Value{"repeatable"}, Columns: []string{"version", "description", "kind", "applied_at", "success"}, Rows: nil},
+			{SQL: appliedSQL, Columns: []string{"version", "description", "kind", "applied_at", "checksum", "success"}, Rows: [][]driver.Value{{"1", "create logs", "sql", "2026-03-20T10:00:00Z", checksum, true}}},
+		},
 	})
 	if err != nil {
 		t.Fatalf("testsql.Open returned error: %v", err)
@@ -135,3 +147,4 @@ func equalDriverValues(left, right []driver.Value) bool {
 	}
 	return true
 }
+

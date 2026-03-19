@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/DaiYuANg/arcgo/collectionx"
+	"github.com/samber/hot"
 )
 
 type mapperMetadata struct {
@@ -13,7 +14,7 @@ type mapperMetadata struct {
 	fields             collectionx.List[MappedField]
 	byColumn           collectionx.Map[string, MappedField]
 	byNormalizedColumn collectionx.Map[string, MappedField]
-	scanPlans          collectionx.ConcurrentMap[string, *scanPlan]
+	scanPlans          *hot.HotCache[string, *scanPlan]
 }
 
 func buildMapperMetadata(entityType reflect.Type, codecs *codecRegistry) (*mapperMetadata, error) {
@@ -33,7 +34,7 @@ func buildMapperMetadata(entityType reflect.Type, codecs *codecRegistry) (*mappe
 		fields:             fields,
 		byColumn:           byColumn,
 		byNormalizedColumn: byNormalizedColumn,
-		scanPlans:          collectionx.NewConcurrentMapWithCapacity[string, *scanPlan](8),
+		scanPlans:          hot.NewHotCache[string, *scanPlan](hot.LRU, 128).Build(),
 	}, nil
 }
 

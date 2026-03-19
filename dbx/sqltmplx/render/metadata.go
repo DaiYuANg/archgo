@@ -4,11 +4,11 @@ import (
 	"reflect"
 	"strings"
 
-	"github.com/DaiYuANg/arcgo/collectionx"
 	"github.com/samber/lo"
+	"github.com/samber/hot"
 )
 
-var structMetadataCache = collectionx.NewConcurrentMap[reflect.Type, *structMetadata]()
+var structMetadataCache = hot.NewHotCache[reflect.Type, *structMetadata](hot.LRU, 256).Build()
 
 type structMetadata struct {
 	fields []structFieldMetadata
@@ -23,13 +23,16 @@ type structFieldMetadata struct {
 }
 
 func cachedStructMetadata(t reflect.Type) *structMetadata {
-	if cached, ok := structMetadataCache.Get(t); ok {
+	if cached, ok := structMetadataCache.Peek(t); ok {
 		return cached
 	}
 
 	metadata := buildStructMetadata(t)
-	actual, _ := structMetadataCache.GetOrStore(t, metadata)
-	return actual
+	if cached, ok := structMetadataCache.Peek(t); ok {
+		return cached
+	}
+	structMetadataCache.Set(t, metadata)
+	return metadata
 }
 
 func buildStructMetadata(t reflect.Type) *structMetadata {

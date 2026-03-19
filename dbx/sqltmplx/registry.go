@@ -5,22 +5,22 @@ import (
 	"path"
 	"strings"
 
-	"github.com/DaiYuANg/arcgo/collectionx"
 	"github.com/DaiYuANg/arcgo/dbx"
 	"github.com/DaiYuANg/arcgo/dbx/dialect"
+	"github.com/samber/hot"
 )
 
 type Registry struct {
 	engine *Engine
 	fsys   fs.FS
-	cache  collectionx.ConcurrentMap[string, *Template]
+	cache  *hot.HotCache[string, *Template]
 }
 
 func NewRegistry(fsys fs.FS, d dialect.Contract, opts ...Option) *Registry {
 	return &Registry{
 		engine: New(d, opts...),
 		fsys:   fsys,
-		cache:  collectionx.NewConcurrentMap[string, *Template](),
+		cache:  hot.NewHotCache[string, *Template](hot.LRU, 256).Build(),
 	}
 }
 
@@ -30,7 +30,7 @@ func (r *Registry) Template(name string) (*Template, error) {
 	}
 
 	normalized := normalizeTemplateName(name)
-	if cached, ok := r.cache.Get(normalized); ok {
+	if cached, ok := r.cache.Peek(normalized); ok {
 		return cached, nil
 	}
 
@@ -43,8 +43,11 @@ func (r *Registry) Template(name string) (*Template, error) {
 		return nil, err
 	}
 
-	actual, _ := r.cache.GetOrStore(normalized, template)
-	return actual, nil
+	if cached, ok := r.cache.Peek(normalized); ok {
+		return cached, nil
+	}
+	r.cache.Set(normalized, template)
+	return template, nil
 }
 
 func (r *Registry) MustTemplate(name string) *Template {

@@ -3,11 +3,11 @@ package dbx
 import (
 	"reflect"
 
-	"github.com/DaiYuANg/arcgo/collectionx"
+	"github.com/samber/hot"
 )
 
 type mapperRegistry struct {
-	structMappers collectionx.ConcurrentMap[reflect.Type, *mapperMetadata]
+	structMappers *hot.HotCache[reflect.Type, *mapperMetadata]
 }
 
 type mapperRuntime struct {
@@ -28,7 +28,7 @@ func newMapperRuntime() *mapperRuntime {
 
 func newMapperRegistry() *mapperRegistry {
 	return &mapperRegistry{
-		structMappers: collectionx.NewConcurrentMap[reflect.Type, *mapperMetadata](),
+		structMappers: hot.NewHotCache[reflect.Type, *mapperMetadata](hot.LRU, 256).Build(),
 	}
 }
 
@@ -38,7 +38,7 @@ func getOrBuildStructMapperMetadata[E any]() (*mapperMetadata, error) {
 
 func getOrBuildMapperMetadata[E any](runtime *mapperRuntime) (*mapperMetadata, error) {
 	entityType := reflect.TypeFor[E]()
-	if cached, ok := runtime.registry.structMappers.Get(entityType); ok {
+	if cached, ok := runtime.registry.structMappers.Peek(entityType); ok {
 		return cached, nil
 	}
 
@@ -46,6 +46,9 @@ func getOrBuildMapperMetadata[E any](runtime *mapperRuntime) (*mapperMetadata, e
 	if err != nil {
 		return nil, err
 	}
-	actual, _ := runtime.registry.structMappers.GetOrStore(entityType, mapper)
-	return actual, nil
+	if cached, ok := runtime.registry.structMappers.Peek(entityType); ok {
+		return cached, nil
+	}
+	runtime.registry.structMappers.Set(entityType, mapper)
+	return mapper, nil
 }
