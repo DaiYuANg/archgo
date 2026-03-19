@@ -2,6 +2,7 @@ package httpx
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -27,6 +28,26 @@ func benchmarkServerWithPingRoute(b *testing.B) *Server {
 	})
 	if err != nil {
 		b.Fatal(err)
+	}
+	return server
+}
+
+func benchmarkServerWithParameterizedRoutes(b *testing.B, total int) *Server {
+	b.Helper()
+
+	server := newServer()
+	for i := 0; i < total; i++ {
+		path := fmt.Sprintf("/resources/%d/items/{id}", i)
+		err := Get(server, path, func(ctx context.Context, input *struct{}) (*benchmarkPingOutput, error) {
+			_ = ctx
+			_ = input
+			out := &benchmarkPingOutput{}
+			out.Body.Message = "pong"
+			return out, nil
+		})
+		if err != nil {
+			b.Fatal(err)
+		}
 	}
 	return server
 }
@@ -62,6 +83,23 @@ func BenchmarkServerServeGet(b *testing.B) {
 		w := serveRequest(b, server, req)
 		if w.Code != http.StatusOK {
 			b.Fatalf("unexpected status code: %d", w.Code)
+		}
+	}
+}
+
+func BenchmarkServerMatchParameterizedRoute(b *testing.B) {
+	server := benchmarkServerWithParameterizedRoutes(b, 2048)
+
+	b.ReportAllocs()
+	b.ResetTimer()
+
+	for i := 0; i < b.N; i++ {
+		route, ok := server.matchRoute(http.MethodGet, "/resources/1024/items/42")
+		if !ok {
+			b.Fatal("expected route to match")
+		}
+		if route.Path != "/resources/1024/items/{id}" {
+			b.Fatalf("unexpected route path: %s", route.Path)
 		}
 	}
 }

@@ -80,10 +80,9 @@ func (s *Server) addRoute(route RouteInfo) {
 
 	s.routesByMethod.Put(route.Method, route)
 	if isParameterizedRoute(route.Path) {
-		s.routePatterns.Put(route.Method, route)
+		s.parameterizedRouteMatcher(route.Method).Add(route.Path, route, s.routeSequence.Add(1))
 	}
 
-	s.routeKeys.Add(key)
 	s.routes.Add(route)
 	s.printRoutesIfEnabled()
 }
@@ -108,41 +107,25 @@ func (s *Server) matchRoute(method, path string) (RouteInfo, bool) {
 		return route, true
 	}
 
-	for _, route := range s.routePatterns.Get(method) {
-		if routePatternMatches(route.Path, path) {
-			return route, true
-		}
+	matcher, ok := s.routeMatchers.Get(method)
+	if !ok || matcher == nil {
+		return RouteInfo{}, false
 	}
-	return RouteInfo{}, false
+	return matcher.Match(path)
 }
 
 func isParameterizedRoute(path string) bool {
 	return strings.Contains(path, "{") && strings.Contains(path, "}")
 }
 
-func routePatternMatches(pattern, path string) bool {
-	pattern = strings.Trim(pattern, "/")
-	path = strings.Trim(path, "/")
-
-	if pattern == "" || path == "" {
-		return pattern == path
+func (s *Server) parameterizedRouteMatcher(method string) *routeMatcher {
+	if s == nil {
+		return nil
 	}
 
-	patternSegments := strings.Split(pattern, "/")
-	pathSegments := strings.Split(path, "/")
-	if len(patternSegments) != len(pathSegments) {
-		return false
-	}
-
-	for i, segment := range patternSegments {
-		if strings.HasPrefix(segment, "{") && strings.HasSuffix(segment, "}") {
-			continue
-		}
-		if segment != pathSegments[i] {
-			return false
-		}
-	}
-	return true
+	matcher := newRouteMatcher()
+	actual, _ := s.routeMatchers.GetOrStore(method, matcher)
+	return actual
 }
 
 type accessLogResponseWriter struct {

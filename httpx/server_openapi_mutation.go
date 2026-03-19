@@ -70,8 +70,8 @@ func (s *Server) AddTag(tag *huma.Tag) {
 		return
 	}
 	s.ConfigureOpenAPI(func(doc *huma.OpenAPI) {
-		if findTag(doc.Tags, tag.Name) >= 0 {
-			doc.Tags[findTag(doc.Tags, tag.Name)] = cloneTag(tag)
+		if index := findTag(doc.Tags, tag.Name); index >= 0 {
+			doc.Tags[index] = cloneTag(tag)
 			return
 		}
 		doc.Tags = append(doc.Tags, cloneTag(tag))

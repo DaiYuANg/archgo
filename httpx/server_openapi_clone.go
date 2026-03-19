@@ -90,11 +90,10 @@ func cloneStringSliceMap(values map[string][]string) map[string][]string {
 }
 
 func findTag(tags []*huma.Tag, name string) int {
-	indexes := lo.FilterMap(tags, func(tag *huma.Tag, i int) (int, bool) {
-		return i, tag != nil && tag.Name == name
-	})
-	if len(indexes) == 0 {
-		return -1
+	for i, tag := range tags {
+		if tag != nil && tag.Name == name {
+			return i
+		}
 	}
-	return indexes[0]
+	return -1
 }

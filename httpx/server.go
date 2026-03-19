@@ -7,7 +7,6 @@ import (
 
 	"github.com/DaiYuANg/arcgo/collectionx/list"
 	"github.com/DaiYuANg/arcgo/collectionx/mapping"
-	"github.com/DaiYuANg/arcgo/collectionx/set"
 	"github.com/DaiYuANg/arcgo/httpx/adapter"
 	"github.com/DaiYuANg/arcgo/httpx/adapter/std"
 	"github.com/danielgtaylor/huma/v2"
@@ -21,10 +20,9 @@ type Server struct {
 	adapter            adapter.Host
 	basePath           string
 	routes             *list.ConcurrentList[RouteInfo]
-	routeKeys          *set.ConcurrentSet[string]
 	routesByMethod     *mapping.ConcurrentMultiMap[string, RouteInfo]
 	routeExact         *mapping.ConcurrentMap[string, RouteInfo]
-	routePatterns      *mapping.ConcurrentMultiMap[string, RouteInfo]
+	routeMatchers      *mapping.ConcurrentMap[string, *routeMatcher]
 	logger             *slog.Logger
 	printRoutes        bool
 	validator          *validator.Validate
@@ -34,6 +32,7 @@ type Server struct {
 	humaMiddlewares    *list.ConcurrentList[func(huma.Context, func(huma.Context))]
 	operationModifiers *list.ConcurrentList[func(*huma.Operation)]
 	openAPIMu          sync.Mutex
+	routeSequence      atomic.Uint64
 	frozen             atomic.Bool
 }
 
@@ -45,10 +44,9 @@ func newServer(opts ...ServerOption) *Server {
 	s := &Server{
 		logger:             slog.Default(),
 		routes:             list.NewConcurrentList[RouteInfo](),
-		routeKeys:          set.NewConcurrentSet[string](),
 		routesByMethod:     mapping.NewConcurrentMultiMap[string, RouteInfo](),
 		routeExact:         mapping.NewConcurrentMap[string, RouteInfo](),
-		routePatterns:      mapping.NewConcurrentMultiMap[string, RouteInfo](),
+		routeMatchers:      mapping.NewConcurrentMap[string, *routeMatcher](),
 		panicRecover:       true,
 		openAPIPatches:     list.NewConcurrentList[func(*huma.OpenAPI)](),
 		humaMiddlewares:    list.NewConcurrentList[func(huma.Context, func(huma.Context))](),
