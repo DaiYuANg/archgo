@@ -4,15 +4,19 @@ import (
 	"database/sql"
 	"fmt"
 	"log/slog"
-	"os"
 
 	"github.com/DaiYuANg/arcgo/dbx"
 	sqlitedialect "github.com/DaiYuANg/arcgo/dbx/dialect/sqlite"
+	"github.com/DaiYuANg/arcgo/logx"
 	_ "modernc.org/sqlite"
 )
 
 func NewLogger() *slog.Logger {
-	return slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	development, err := logx.NewDevelopment()
+	if err != nil {
+		return nil
+	}
+	return development
 }
 
 func OpenSQLite(name string, opts ...dbx.Option) (*dbx.DB, func() error, error) {
