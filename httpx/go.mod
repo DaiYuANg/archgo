@@ -4,7 +4,6 @@ go 1.26.1
 
 require (
 	github.com/danielgtaylor/huma/v2 v2.37.2
-	github.com/go-chi/chi/v5 v5.2.5
 	github.com/go-playground/validator/v10 v10.30.1
 	github.com/lxzan/gws v1.9.0
 	github.com/prometheus/client_golang v1.23.2
