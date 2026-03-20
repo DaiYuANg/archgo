@@ -4,11 +4,13 @@ import (
 	"context"
 	"database/sql"
 	"database/sql/driver"
+	"path/filepath"
 	"strings"
 	"testing"
 	"testing/fstest"
 
 	"github.com/DaiYuANg/arcgo/dbx/internal/testsql"
+	_ "modernc.org/sqlite"
 )
 
 type testDialect struct{}
@@ -19,32 +21,11 @@ func (testDialect) QuoteIdent(ident string) string                       { retur
 func (testDialect) RenderLimitOffset(limit, offset *int) (string, error) { return "", nil }
 
 func TestRunnerUpGoCreatesHistoryAndAppliesMigration(t *testing.T) {
-	historyDDL := historyTableDDL(testDialect{}, "schema_history")
-	listSQL := historyRowsForStatusSQL(testDialect{}, "schema_history")
-	appliedSQL := appliedRecordsSQL(testDialect{}, "schema_history")
-	checksum := checksumString("go|1|create sample")
+	ctx := context.Background()
+	db := openSQLiteRunnerDB(t)
+	runner := NewRunner(db, testDialect{}, RunnerOptions{ValidateHash: true})
 
-	sqlDB, recorder, cleanup, err := testsql.Open(testsql.Plan{
-		Execs: []testsql.ExecPlan{
-			{SQL: `CREATE TABLE sample (id INTEGER PRIMARY KEY)`},
-			{SQL: `DELETE FROM "schema_history" WHERE "version" = ? AND "kind" = ? AND "description" = ?`},
-			{SQL: `INSERT INTO "schema_history" ("version", "description", "kind", "checksum", "success", "applied_at") VALUES (?, ?, ?, ?, ?, ?)`},
-			{SQL: historyDDL},
-		},
-		Queries: []testsql.QueryPlan{
-			{SQL: listSQL, Args: []driver.Value{"repeatable"}, Columns: []string{"version", "description", "kind", "applied_at", "success"}, Rows: nil},
-			{SQL: listSQL, Args: []driver.Value{"repeatable"}, Columns: []string{"version", "description", "kind", "applied_at", "success"}, Rows: nil},
-			{SQL: listSQL, Args: []driver.Value{"repeatable"}, Columns: []string{"version", "description", "kind", "applied_at", "success"}, Rows: nil},
-			{SQL: appliedSQL, Columns: []string{"version", "description", "kind", "applied_at", "checksum", "success"}, Rows: [][]driver.Value{{"1", "create sample", "go", "2026-03-20T10:00:00Z", checksum, true}}},
-		},
-	})
-	if err != nil {
-		t.Fatalf("testsql.Open returned error: %v", err)
-	}
-	defer cleanup()
-
-	runner := NewRunner(sqlDB, testDialect{}, RunnerOptions{})
-	report, err := runner.UpGo(context.Background(), NewGoMigration("1", "create sample", func(ctx context.Context, tx *sql.Tx) error {
+	report, err := runner.UpGo(ctx, NewGoMigration("1", "create sample", func(ctx context.Context, tx *sql.Tx) error {
 		_, execErr := tx.ExecContext(ctx, `CREATE TABLE sample (id INTEGER PRIMARY KEY)`)
 		return execErr
 	}, nil))
@@ -54,14 +35,20 @@ func TestRunnerUpGoCreatesHistoryAndAppliesMigration(t *testing.T) {
 	if len(report.Applied) != 1 || report.Applied[0].Version != "1" || report.Applied[0].Kind != KindGo {
 		t.Fatalf("unexpected go migration report: %+v", report)
 	}
-	if len(recorder.Execs) != 4 {
-		t.Fatalf("unexpected exec count: %d", len(recorder.Execs))
+
+	applied, err := runner.Applied(ctx)
+	if err != nil {
+		t.Fatalf("Applied returned error: %v", err)
 	}
-	if len(recorder.Execs[2].Args) != 6 {
-		t.Fatalf("unexpected history insert args: %#v", recorder.Execs[2].Args)
+	if len(applied) != 1 || applied[0].Version != "1" || applied[0].Kind != KindGo || !applied[0].Success {
+		t.Fatalf("unexpected applied records: %+v", applied)
 	}
-	if got := recorder.Execs[2].Args[:5]; !equalDriverValues(got, []driver.Value{"1", "create sample", "go", checksum, true}) {
-		t.Fatalf("unexpected history insert args: %#v", recorder.Execs[2].Args)
+
+	if !sqliteTableExists(t, db, "sample") {
+		t.Fatalf("expected sample table to exist")
+	}
+	if !sqliteTableExists(t, db, "schema_history") {
+		t.Fatalf("expected schema_history table to exist")
 	}
 }
 
@@ -96,55 +83,58 @@ func TestRunnerPendingSQLTracksRepeatableChecksum(t *testing.T) {
 }
 
 func TestRunnerUpSQLAppliesVersionedFiles(t *testing.T) {
-	historyDDL := historyTableDDL(testDialect{}, "schema_history")
-	listSQL := historyRowsForStatusSQL(testDialect{}, "schema_history")
-	appliedSQL := appliedRecordsSQL(testDialect{}, "schema_history")
-	checksum := checksumString(strings.Join([]string{"sql", "1", "create logs", "CREATE TABLE logs (id INTEGER PRIMARY KEY)", ""}, "\n--dbx-migrate--\n"))
-
-	sqlDB, _, cleanup, err := testsql.Open(testsql.Plan{
-		Execs: []testsql.ExecPlan{
-			{SQL: `CREATE TABLE logs (id INTEGER PRIMARY KEY)`},
-			{SQL: `DELETE FROM "schema_history" WHERE "version" = ? AND "kind" = ? AND "description" = ?`},
-			{SQL: `INSERT INTO "schema_history" ("version", "description", "kind", "checksum", "success", "applied_at") VALUES (?, ?, ?, ?, ?, ?)`},
-			{SQL: historyDDL},
-		},
-		Queries: []testsql.QueryPlan{
-			{SQL: listSQL, Args: []driver.Value{"repeatable"}, Columns: []string{"version", "description", "kind", "applied_at", "success"}, Rows: nil},
-			{SQL: listSQL, Args: []driver.Value{"repeatable"}, Columns: []string{"version", "description", "kind", "applied_at", "success"}, Rows: nil},
-			{SQL: listSQL, Args: []driver.Value{"repeatable"}, Columns: []string{"version", "description", "kind", "applied_at", "success"}, Rows: nil},
-			{SQL: appliedSQL, Columns: []string{"version", "description", "kind", "applied_at", "checksum", "success"}, Rows: [][]driver.Value{{"1", "create logs", "sql", "2026-03-20T10:00:00Z", checksum, true}}},
-		},
-	})
-	if err != nil {
-		t.Fatalf("testsql.Open returned error: %v", err)
-	}
-	defer cleanup()
+	ctx := context.Background()
+	db := openSQLiteRunnerDB(t)
+	runner := NewRunner(db, testDialect{}, RunnerOptions{ValidateHash: true})
 
 	source := FileSource{
 		FS: fstest.MapFS{
-			"sql/V1__create_logs.sql": &fstest.MapFile{Data: []byte("CREATE TABLE logs (id INTEGER PRIMARY KEY)\n")},
+			"sql/V1__create_logs.sql": &fstest.MapFile{Data: []byte("CREATE TABLE logs (id INTEGER PRIMARY KEY);\n")},
 		},
 		Dir: "sql",
 	}
-	runner := NewRunner(sqlDB, testDialect{}, RunnerOptions{})
-	report, err := runner.UpSQL(context.Background(), source)
+
+	report, err := runner.UpSQL(ctx, source)
 	if err != nil {
 		t.Fatalf("UpSQL returned error: %v", err)
 	}
-	if len(report.Applied) != 1 || report.Applied[0].Kind != KindSQL {
+	if len(report.Applied) != 1 || report.Applied[0].Version != "1" || report.Applied[0].Kind != KindSQL {
 		t.Fatalf("unexpected sql migration report: %+v", report)
 	}
+
+	applied, err := runner.Applied(ctx)
+	if err != nil {
+		t.Fatalf("Applied returned error: %v", err)
+	}
+	if len(applied) != 1 || applied[0].Version != "1" || applied[0].Kind != KindSQL || !applied[0].Success {
+		t.Fatalf("unexpected applied records: %+v", applied)
+	}
+
+	if !sqliteTableExists(t, db, "logs") {
+		t.Fatalf("expected logs table to exist")
+	}
+	if !sqliteTableExists(t, db, "schema_history") {
+		t.Fatalf("expected schema_history table to exist")
+	}
 }
 
-func equalDriverValues(left, right []driver.Value) bool {
-	if len(left) != len(right) {
-		return false
+func openSQLiteRunnerDB(t *testing.T) *sql.DB {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "runner.db")
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatalf("sql.Open returned error: %v", err)
 	}
-	for i := range left {
-		if left[i] != right[i] {
-			return false
-		}
-	}
-	return true
+	t.Cleanup(func() { _ = db.Close() })
+	return db
 }
 
+func sqliteTableExists(t *testing.T, db *sql.DB, name string) bool {
+	t.Helper()
+	var exists bool
+	err := db.QueryRow(`SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?)`, name).Scan(&exists)
+	if err != nil {
+		t.Fatalf("table exists query returned error: %v", err)
+	}
+	return exists
+}

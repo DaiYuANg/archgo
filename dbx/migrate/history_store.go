@@ -3,6 +3,7 @@ package migrate
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"time"
 
@@ -32,6 +33,18 @@ func (s *historyStore) Tablename() string {
 func (s *historyStore) CreateVersionTable(ctx context.Context, db goosedatabase.DBTxConn) error {
 	_, err := db.ExecContext(ctx, historyTableDDL(s.dialect, s.tableName))
 	return err
+}
+
+func (s *historyStore) TableExists(ctx context.Context, db goosedatabase.DBTxConn) (bool, error) {
+	query, err := historyTableExistsSQL(s.dialect)
+	if err != nil {
+		return false, err
+	}
+	var exists bool
+	if err := db.QueryRowContext(ctx, query, s.tableName).Scan(&exists); err != nil {
+		return false, err
+	}
+	return exists, nil
 }
 
 func (s *historyStore) Insert(ctx context.Context, db goosedatabase.DBTxConn, req goosedatabase.InsertRequest) error {
@@ -146,3 +159,15 @@ func (s *historyStore) ListMigrations(ctx context.Context, db goosedatabase.DBTx
 	return items.Values(), nil
 }
 
+func historyTableExistsSQL(d dialect.Dialect) (string, error) {
+	switch d.Name() {
+	case "sqlite":
+		return "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?)", nil
+	case "postgres":
+		return "SELECT EXISTS(SELECT 1 FROM information_schema.tables WHERE table_schema = current_schema() AND table_name = " + d.BindVar(1) + ")", nil
+	case "mysql":
+		return "SELECT EXISTS(SELECT 1 FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = ?)", nil
+	default:
+		return "", errors.ErrUnsupported
+	}
+}

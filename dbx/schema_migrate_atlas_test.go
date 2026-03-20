@@ -1,9 +1,13 @@
 package dbx
 
 import (
+	"context"
+	"database/sql"
+	"strings"
 	"testing"
 
 	atlasschema "ariga.io/atlas/sql/schema"
+	_ "modernc.org/sqlite"
 )
 
 func TestCompileAtlasSchemaIncludesDerivedMetadata(t *testing.T) {
@@ -59,5 +63,32 @@ func TestAtlasSplitChangesSeparatesExecutableAndManualChanges(t *testing.T) {
 	}
 	if manual[0].Kind != MigrationActionManual {
 		t.Fatalf("unexpected manual action kind: %+v", manual[0])
+	}
+}
+
+func TestPlanSchemaChangesWithAtlasIncludesSQLPreview(t *testing.T) {
+	raw, err := sql.Open("sqlite", "file:dbx-atlas-preview?mode=memory&cache=shared")
+	if err != nil {
+		t.Fatalf("sql.Open returned error: %v", err)
+	}
+	defer raw.Close()
+
+	core := New(raw, testSQLiteDialect{})
+	users := MustSchema("users", UserSchema{})
+
+	plan, err := core.PlanSchemaChanges(context.Background(), users)
+	if err != nil {
+		t.Fatalf("PlanSchemaChanges returned error: %v", err)
+	}
+
+	preview := plan.SQLPreview()
+	if len(preview) == 0 {
+		t.Fatal("expected atlas preview sql")
+	}
+	if !strings.Contains(strings.ToLower(preview[0]), "create table") {
+		t.Fatalf("unexpected atlas preview sql: %+v", preview)
+	}
+	if !strings.Contains(strings.ToLower(strings.Join(preview, " ")), "integer not null primary key autoincrement") {
+		t.Fatalf("expected sqlite autoincrement preview to use integer primary key: %+v", preview)
 	}
 }

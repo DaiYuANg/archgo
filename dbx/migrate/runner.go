@@ -349,6 +349,3 @@ func kindForSQLMigration(migration SQLMigration) Kind {
 	}
 	return KindSQL
 }
-
-
-

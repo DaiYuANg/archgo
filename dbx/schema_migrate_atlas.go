@@ -199,10 +199,7 @@ func compileAtlasSchema(dialectName string, driver atlasmigrate.Driver, schemaNa
 }
 
 func compileAtlasColumn(dialectName string, driver atlasmigrate.Driver, column ColumnMeta) (*atlasschema.Column, error) {
-	rawType := strings.TrimSpace(column.SQLType)
-	if rawType == "" {
-		rawType = inferTypeName(column)
-	}
+	rawType := atlasColumnRawType(dialectName, column)
 	atlasColumn := atlasschema.NewColumn(column.Name)
 	atlasColumn.Type = &atlasschema.ColumnType{
 		Type: atlasColumnType(driver, rawType, column),
@@ -217,6 +214,17 @@ func compileAtlasColumn(dialectName string, driver atlasmigrate.Driver, column C
 		atlasAddAutoIncrementAttr(dialectName, atlasColumn)
 	}
 	return atlasColumn, nil
+}
+
+func atlasColumnRawType(dialectName string, column ColumnMeta) string {
+	rawType := strings.TrimSpace(column.SQLType)
+	if rawType == "" {
+		rawType = inferTypeName(column)
+	}
+	if strings.EqualFold(strings.TrimSpace(dialectName), "sqlite") && column.AutoIncrement {
+		return "integer"
+	}
+	return rawType
 }
 
 func atlasColumnType(driver atlasmigrate.Driver, rawType string, column ColumnMeta) atlasschema.Type {

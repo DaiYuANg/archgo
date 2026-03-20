@@ -32,9 +32,11 @@ func main() {
 	fmt.Println("planned migration actions:")
 	for _, action := range plan.Actions {
 		fmt.Printf("- kind=%s executable=%t summary=%s\n", action.Kind, action.Executable, action.Summary)
-		if action.Statement.SQL != "" {
-			fmt.Printf("  sql=%s\n", action.Statement.SQL)
-		}
+	}
+
+	fmt.Println("planned sql preview:")
+	for _, sqlText := range plan.SQLPreview() {
+		fmt.Printf("- sql=%s\n", sqlText)
 	}
 
 	report, err := core.AutoMigrate(ctx, catalog.Roles, catalog.Users, catalog.UserRoles)

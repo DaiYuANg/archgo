@@ -137,6 +137,26 @@ type MigrationPlan struct {
 	Report  ValidationReport
 }
 
+func (a MigrationAction) HasStatement() bool {
+	return strings.TrimSpace(a.Statement.SQL) != ""
+}
+
+func (a MigrationAction) SQLPreview() string {
+	return strings.TrimSpace(a.Statement.SQL)
+}
+
+func (p MigrationPlan) Statements() []BoundQuery {
+	return lo.FilterMap(p.Actions, func(action MigrationAction, _ int) (BoundQuery, bool) {
+		return action.Statement, action.HasStatement()
+	})
+}
+
+func (p MigrationPlan) SQLPreview() []string {
+	return lo.FilterMap(p.Actions, func(action MigrationAction, _ int) (string, bool) {
+		return action.SQLPreview(), action.HasStatement()
+	})
+}
+
 type SchemaDriftError struct {
 	Report ValidationReport
 }

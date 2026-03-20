@@ -312,6 +312,13 @@ func TestPlanSchemaChangesIncludesDerivedConstraints(t *testing.T) {
 	if report := plan.Report; len(report.Tables) != 1 || report.Tables[0].PrimaryKeyDiff == nil {
 		t.Fatalf("unexpected report: %+v", report)
 	}
+	preview := plan.SQLPreview()
+	if len(preview) != 2 {
+		t.Fatalf("unexpected preview count: %d", len(preview))
+	}
+	if !strings.Contains(preview[0], "create table users") {
+		t.Fatalf("unexpected preview sql: %+v", preview)
+	}
 }
 
 func TestAutoMigrateAddsMissingForeignKeyAndCheck(t *testing.T) {

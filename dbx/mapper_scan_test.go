@@ -205,3 +205,74 @@ func TestStructMapperScanPlanMatchesQualifiedAndCaseInsensitiveColumns(t *testin
 		t.Fatalf("unexpected aggregate row: %+v", items[0])
 	}
 }
+
+func TestQueryCursorScansEmbeddedPointerNullableAndScanner(t *testing.T) {
+	sqlDB, _, cleanup, err := testsql.Open(testsql.Plan{
+		Queries: []testsql.QueryPlan{
+			{
+				SQL:     `SELECT "accounts"."id", "accounts"."nickname", "accounts"."bio", "accounts"."label" FROM "accounts"`,
+				Columns: []string{"id", "nickname", "bio", "label"},
+				Rows: [][]driver.Value{
+					{int64(1), "ally", "hello", "admin"},
+					{int64(2), nil, nil, "reader"},
+				},
+			},
+			{
+				SQL:     `SELECT "accounts"."id", "accounts"."nickname", "accounts"."bio", "accounts"."label" FROM "accounts"`,
+				Columns: []string{"id", "nickname", "bio", "label"},
+				Rows: [][]driver.Value{
+					{int64(1), "ally", "hello", "admin"},
+					{int64(2), nil, nil, "reader"},
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("testsql.Open returned error: %v", err)
+	}
+	defer cleanup()
+
+	accounts := MustSchema("accounts", accountSchema{})
+	mapper := MustStructMapper[accountRecord]()
+	core := New(sqlDB, testSQLiteDialect{})
+	query := Select(accounts.AllColumns()...).From(accounts)
+
+	cursor, err := QueryCursor(context.Background(), core, query, mapper)
+	if err != nil {
+		t.Fatalf("QueryCursor returned error: %v", err)
+	}
+	defer cursor.Close()
+
+	var items []accountRecord
+	for cursor.Next() {
+		item, err := cursor.Get()
+		if err != nil {
+			t.Fatalf("cursor.Get returned error: %v", err)
+		}
+		items = append(items, item)
+	}
+	if err := cursor.Err(); err != nil {
+		t.Fatalf("cursor.Err returned error: %v", err)
+	}
+	if len(items) != 2 {
+		t.Fatalf("unexpected item count: %d", len(items))
+	}
+	if items[0].AccountProfile == nil || items[0].Nickname == nil || *items[0].Nickname != "ally" {
+		t.Fatalf("unexpected first item: %+v", items[0])
+	}
+	if items[1].Label != "READER" {
+		t.Fatalf("unexpected second label: %q", items[1].Label)
+	}
+
+	var fromEach []accountRecord
+	QueryEach(context.Background(), core, query, mapper)(func(item accountRecord, err error) bool {
+		if err != nil {
+			t.Fatalf("QueryEach yielded error: %v", err)
+		}
+		fromEach = append(fromEach, item)
+		return true
+	})
+	if len(fromEach) != 2 || fromEach[0].Label != "ADMIN" || fromEach[1].Label != "READER" {
+		t.Fatalf("unexpected each items: %+v", fromEach)
+	}
+}
