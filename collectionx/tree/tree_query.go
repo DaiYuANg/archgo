@@ -73,8 +73,12 @@ func (t *Tree[K, V]) Descendants(id K) []*Node[K, V] {
 		return nil
 	}
 
-	descendants := make([]*Node[K, V], 0, node.children.Len())
-	stack := make([]*Node[K, V], 0, node.children.Len())
+	capacity := t.Len()
+	if capacity <= 0 {
+		capacity = node.children.Len()
+	}
+	descendants := make([]*Node[K, V], 0, capacity)
+	stack := make([]*Node[K, V], 0, capacity)
 	for i := node.children.Len() - 1; i >= 0; i-- {
 		child, _ := node.children.Get(i)
 		stack = append(stack, child)

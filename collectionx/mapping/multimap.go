@@ -41,9 +41,21 @@ func (m *MultiMap[K, V]) PutAll(key K, values ...V) {
 	m.ensureInit()
 
 	current, _ := m.items.Get(key)
-	next := make([]V, len(current)+len(values))
-	copy(next, current)
-	copy(next[len(current):], values)
+	needed := len(current) + len(values)
+	var next []V
+	if cap(current) >= needed {
+		next = append(current, values...)
+	} else {
+		capacity := needed
+		if needed < 256 {
+			capacity = needed * 2
+		} else {
+			capacity = needed + needed/4
+		}
+		next = make([]V, needed, capacity)
+		copy(next, current)
+		copy(next[len(current):], values)
+	}
 	m.items.Set(key, next)
 	m.valueCount += len(values)
 }
