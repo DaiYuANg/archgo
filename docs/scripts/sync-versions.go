@@ -62,7 +62,13 @@ func loadTags() []string {
 		exitWithError(err)
 	}
 	if len(tags) == 0 {
-		exitWithMessage("❌ 没有找到任何 git tags")
+		fmt.Println("⚠️  未找到 git tags，使用 short commit 作为版本标识")
+		shortCommit, err := getShortCommit()
+		if err != nil {
+			exitWithError(err)
+		}
+		fmt.Printf("✅ 使用版本：%s (short commit)\n\n", shortCommit)
+		return []string{shortCommit}
 	}
 
 	fmt.Println("✅ 找到以下 tags:")
