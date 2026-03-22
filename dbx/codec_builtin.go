@@ -5,6 +5,7 @@ import (
 	"encoding"
 	"fmt"
 	"reflect"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -92,7 +93,7 @@ func (textCodec) Encode(source reflect.Value) (any, error) {
 	case source.Kind() == reflect.String:
 		return source.String(), nil
 	case source.Kind() == reflect.Slice && source.Type().Elem().Kind() == reflect.Uint8:
-		return append([]byte(nil), source.Bytes()...), nil
+		return slices.Clone(source.Bytes()), nil
 	}
 
 	if marshaler := resolveTextMarshaler(source); marshaler != nil {

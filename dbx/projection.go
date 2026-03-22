@@ -1,7 +1,6 @@
 package dbx
 
 import (
-	"github.com/DaiYuANg/arcgo/collectionx"
 	"github.com/samber/lo"
 )
 
@@ -43,20 +42,18 @@ func projectionOfDefinition(definition schemaDefinition, mapper fieldMapper) ([]
 		return column.Name, column
 	})
 
-	items := collectionx.NewListWithCapacity[SelectItem](len(fields))
-	for _, field := range fields {
+	items := lo.FilterMap(fields, func(field MappedField, _ int) (SelectItem, bool) {
 		column, ok := columns[field.Column]
 		if !ok {
-			continue
+			return nil, false
 		}
-		items.Add(schemaSelectItem{meta: column})
+		return schemaSelectItem{meta: column}, true
+	})
+	if unmapped, ok := lo.Find(fields, func(field MappedField) bool {
+		_, ok := columns[field.Column]
+		return !ok
+	}); ok {
+		return nil, &UnmappedColumnError{Column: unmapped.Column}
 	}
-	if items.Len() != len(fields) {
-		for _, field := range fields {
-			if _, ok := columns[field.Column]; !ok {
-				return nil, &UnmappedColumnError{Column: field.Column}
-			}
-		}
-	}
-	return items.Values(), nil
+	return items, nil
 }

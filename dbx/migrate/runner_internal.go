@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/DaiYuANg/arcgo/dbx/dialect"
+	"github.com/samber/lo"
 )
 
 const timeLayout = "2006-01-02T15:04:05.999999999Z07:00"
@@ -18,11 +19,9 @@ func appliedRecordKey(kind Kind, version, description string) string {
 }
 
 func indexAppliedRecords(records []AppliedRecord) map[string]AppliedRecord {
-	indexed := make(map[string]AppliedRecord, len(records))
-	for _, record := range records {
-		indexed[appliedRecordKey(record.Kind, record.Version, record.Description)] = record
-	}
-	return indexed
+	return lo.Associate(records, func(record AppliedRecord) (string, AppliedRecord) {
+		return appliedRecordKey(record.Kind, record.Version, record.Description), record
+	})
 }
 
 func checksumGoMigration(migration Migration) string {
@@ -122,11 +121,12 @@ func replaceAppliedRecordOnConn(ctx context.Context, conn interface {
 }
 
 func appliedRecordForVersion(items []AppliedRecord, record AppliedRecord) (AppliedRecord, error) {
-	for _, item := range items {
-		if item.Kind == record.Kind && item.Version == record.Version && item.Description == record.Description {
-			return item, nil
-		}
+	found, ok := lo.Find(items, func(item AppliedRecord) bool {
+		return item.Kind == record.Kind && item.Version == record.Version && item.Description == record.Description
+	})
+	if !ok {
+		return AppliedRecord{}, fmt.Errorf("dbx/migrate: applied record not found for version %s", record.Version)
 	}
-	return AppliedRecord{}, fmt.Errorf("dbx/migrate: applied record not found for version %s", record.Version)
+	return found, nil
 }
 

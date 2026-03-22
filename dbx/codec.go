@@ -5,8 +5,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
-	"sync"
+	"slices"
 	"strings"
+	"sync"
 
 	"github.com/samber/hot"
 )
@@ -272,9 +273,9 @@ func isNilValue(value reflect.Value) bool {
 func normalizeJSONPayload(src any) ([]byte, error) {
 	switch value := src.(type) {
 	case []byte:
-		return append([]byte(nil), value...), nil
+		return slices.Clone(value), nil
 	case sql.RawBytes:
-		return append([]byte(nil), value...), nil
+		return slices.Clone(value), nil
 	case string:
 		return []byte(value), nil
 	default:

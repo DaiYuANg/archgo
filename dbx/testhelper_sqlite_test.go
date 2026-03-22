@@ -53,8 +53,42 @@ func OpenTestSQLiteWithSchema(tb testing.TB, dataSQL ...string) (*sql.DB, func()
 	return OpenTestSQLite(tb, ddl...)
 }
 
+// OpenBenchmarkSQLiteMemory opens an in-memory SQLite DB for benchmarks (no disk I/O).
+// Use with b.Run("Memory", ...) to compare against OpenBenchmarkSQLite (disk I/O).
+func OpenBenchmarkSQLiteMemory(tb testing.TB, ddl ...string) (*sql.DB, func()) {
+	tb.Helper()
+	db, err := sql.Open("sqlite", ":memory:")
+	if err != nil {
+		tb.Fatalf("sql.Open: %v", err)
+	}
+	db.SetMaxOpenConns(1)
+	if _, err := db.Exec("PRAGMA foreign_keys = ON"); err != nil {
+		_ = db.Close()
+		tb.Fatalf("PRAGMA foreign_keys: %v", err)
+	}
+	for _, s := range ddl {
+		if s == "" {
+			continue
+		}
+		if _, err := db.Exec(s); err != nil {
+			_ = db.Close()
+			tb.Fatalf("exec ddl %q: %v", s, err)
+		}
+	}
+	return db, func() { _ = db.Close() }
+}
+
+// OpenBenchmarkSQLiteMemoryWithSchema opens in-memory SQLite with standard users/roles schema for benchmarks.
+func OpenBenchmarkSQLiteMemoryWithSchema(tb testing.TB, dataSQL ...string) (*sql.DB, func()) {
+	tb.Helper()
+	ddl := make([]string, 0, 1+len(dataSQL))
+	ddl = append(ddl, testSchemaDDL)
+	ddl = append(ddl, dataSQL...)
+	return OpenBenchmarkSQLiteMemory(tb, ddl...)
+}
+
 // OpenBenchmarkSQLite opens a SQLite DB file in a temp directory (real disk I/O).
-// Use for benchmarks to simulate production; use OpenTestSQLite for fast in-memory tests.
+// Use for benchmarks to simulate production; use OpenBenchmarkSQLiteMemory for in-memory comparison.
 func OpenBenchmarkSQLite(tb testing.TB, ddl ...string) (*sql.DB, func()) {
 	tb.Helper()
 	path := filepath.Join(tb.TempDir(), "bench.db")

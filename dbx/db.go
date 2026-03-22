@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"log/slog"
+	"slices"
 
 	"github.com/DaiYuANg/arcgo/dbx/dialect"
 	"github.com/DaiYuANg/arcgo/dbx/migrate"
@@ -56,7 +57,7 @@ func (db *DB) Logger() *slog.Logger {
 }
 
 func (db *DB) Hooks() []Hook {
-	return append([]Hook(nil), db.observe.hooks...)
+	return slices.Clone(db.observe.hooks)
 }
 
 func (db *DB) Debug() bool {
@@ -135,7 +136,7 @@ func (db *DB) QueryRowContext(ctx context.Context, query string, args ...any) *s
 }
 
 func (db *DB) Bound(sql string, args ...any) BoundQuery {
-	return BoundQuery{SQL: sql, Args: append([]any(nil), args...)}
+	return BoundQuery{SQL: sql, Args: slices.Clone(args)}
 }
 
 func (db *DB) QueryBoundContext(ctx context.Context, bound BoundQuery) (*sql.Rows, error) {

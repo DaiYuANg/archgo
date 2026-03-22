@@ -1,6 +1,8 @@
 package sqltmplx
 
 import (
+	"slices"
+
 	"github.com/DaiYuANg/arcgo/dbx"
 	"github.com/DaiYuANg/arcgo/dbx/dialect"
 	"github.com/DaiYuANg/arcgo/dbx/sqltmplx/parse"
@@ -60,6 +62,6 @@ func (t *Template) Bind(params any) (dbx.BoundQuery, error) {
 	return dbx.BoundQuery{
 		Name: t.name,
 		SQL:  bound.Query,
-		Args: append([]any(nil), bound.Args...),
+		Args: slices.Clone(bound.Args),
 	}, nil
 }

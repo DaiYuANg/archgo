@@ -344,14 +344,9 @@ func parseIndexColumns(definition string) []string {
 		return nil
 	}
 	parts := strings.Split(definition[start+1:end], ",")
-	columns := collectionx.NewListWithCapacity[string](len(parts))
-	for _, part := range parts {
-		trimmed := strings.TrimSpace(strings.Trim(part, `"`))
-		if trimmed != "" {
-			columns.Add(trimmed)
-		}
-	}
-	return columns.Values()
+	return lo.Compact(lo.Map(parts, func(part string, _ int) string {
+		return strings.TrimSpace(strings.Trim(part, `"`))
+	}))
 }
 
 func singlePrimaryKeyColumn(primaryKey *dbx.PrimaryKeyMeta) string {

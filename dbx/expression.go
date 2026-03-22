@@ -1,6 +1,10 @@
 package dbx
 
-import "github.com/samber/lo"
+import (
+	"slices"
+
+	"github.com/samber/lo"
+)
 
 type Expression interface {
 	expressionNode()
@@ -244,7 +248,7 @@ func (b *CaseBuilder[T]) Else(value any) CaseExpression[T] {
 		return CaseExpression[T]{Else: value}
 	}
 	return CaseExpression[T]{
-		Branches: append([]caseWhenBranch(nil), b.branches...),
+		Branches: slices.Clone(b.branches),
 		Else:     value,
 	}
 }
@@ -254,7 +258,7 @@ func (b *CaseBuilder[T]) End() CaseExpression[T] {
 		return CaseExpression[T]{}
 	}
 	return CaseExpression[T]{
-		Branches: append([]caseWhenBranch(nil), b.branches...),
+		Branches: slices.Clone(b.branches),
 	}
 }
 

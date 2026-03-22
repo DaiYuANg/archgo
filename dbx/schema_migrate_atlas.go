@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"hash/fnv"
 	"reflect"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -490,10 +491,10 @@ func atlasReportFromChanges(changes []atlasschema.Change, compiled *atlasCompile
 			}
 			diff, _ := diffs.Get(c.T.Name)
 			diff.MissingTable = true
-			diff.MissingColumns = append([]ColumnMeta(nil), compiledTable.spec.Columns...)
-			diff.MissingIndexes = append([]IndexMeta(nil), compiledTable.spec.Indexes...)
-			diff.MissingForeignKeys = append([]ForeignKeyMeta(nil), compiledTable.spec.ForeignKeys...)
-			diff.MissingChecks = append([]CheckMeta(nil), compiledTable.spec.Checks...)
+			diff.MissingColumns = slices.Clone(compiledTable.spec.Columns)
+			diff.MissingIndexes = slices.Clone(compiledTable.spec.Indexes)
+			diff.MissingForeignKeys = slices.Clone(compiledTable.spec.ForeignKeys)
+			diff.MissingChecks = slices.Clone(compiledTable.spec.Checks)
 			if compiledTable.spec.PrimaryKey != nil {
 				diff.PrimaryKeyDiff = &PrimaryKeyDiff{Expected: new(clonePrimaryKeyMeta(*compiledTable.spec.PrimaryKey)), Issues: []string{"table does not exist"}}
 			}
@@ -653,7 +654,7 @@ func atlasPlanActions(ctx context.Context, driver atlasmigrate.Driver, changes [
 				Kind:       kind,
 				Table:      table,
 				Summary:    summary,
-				Statement:  BoundQuery{SQL: planned.Cmd, Args: append([]any(nil), planned.Args...)},
+				Statement:  BoundQuery{SQL: planned.Cmd, Args: slices.Clone(planned.Args)},
 				Executable: true,
 			})
 		}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"reflect"
+	"slices"
 	"strings"
 
 	"github.com/DaiYuANg/arcgo/collectionx"
@@ -503,7 +504,7 @@ func diffSchema(ctx context.Context, schemaDialect SchemaDialect, session Sessio
 func buildTableSpec(def schemaDefinition) TableSpec {
 	return TableSpec{
 		Name:        def.table.name,
-		Columns:     append([]ColumnMeta(nil), def.columns...),
+		Columns:     slices.Clone(def.columns),
 		Indexes:     deriveIndexes(def),
 		PrimaryKey:  derivePrimaryKey(def),
 		ForeignKeys: deriveForeignKeys(def),
@@ -833,6 +834,6 @@ func schemaNames(schemas []SchemaResource) string {
 }
 
 func clonePrimaryKeyState(state PrimaryKeyState) PrimaryKeyState {
-	state.Columns = append([]string(nil), state.Columns...)
+	state.Columns = slices.Clone(state.Columns)
 	return state
 }

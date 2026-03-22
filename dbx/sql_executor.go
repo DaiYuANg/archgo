@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"slices"
 
 	"github.com/samber/mo"
 	scanlib "github.com/stephenafamo/scan"
@@ -30,7 +31,7 @@ func (x *SQLExecutor) Bind(statement SQLStatementSource, params any) (BoundQuery
 		bound.Name = statement.StatementName()
 	}
 	if len(bound.Args) > 0 {
-		bound.Args = append([]any(nil), bound.Args...)
+		bound.Args = slices.Clone(bound.Args)
 	}
 	return bound, nil
 }

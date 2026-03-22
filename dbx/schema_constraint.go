@@ -3,9 +3,10 @@ package dbx
 import (
 	"fmt"
 	"reflect"
+	"slices"
 	"strings"
 
-	"github.com/DaiYuANg/arcgo/collectionx"
+	"github.com/samber/lo"
 )
 
 type PrimaryKeyMeta struct {
@@ -162,14 +163,9 @@ func splitColumnsOption(value string) []string {
 	parts := strings.FieldsFunc(trimmed, func(r rune) bool {
 		return r == '|' || r == ','
 	})
-	items := collectionx.NewListWithCapacity[string](len(parts))
-	for _, part := range parts {
-		name := strings.TrimSpace(part)
-		if name != "" {
-			items.Add(name)
-		}
-	}
-	return items.Values()
+	return lo.Compact(lo.Map(parts, func(part string, _ int) string {
+		return strings.TrimSpace(part)
+	}))
 }
 
 func defaultConstraintName(table, field string, meta keyBindingMeta) string {
@@ -184,18 +180,18 @@ func defaultConstraintName(table, field string, meta keyBindingMeta) string {
 }
 
 func cloneIndexMeta(meta IndexMeta) IndexMeta {
-	meta.Columns = append([]string(nil), meta.Columns...)
+	meta.Columns = slices.Clone(meta.Columns)
 	return meta
 }
 
 func clonePrimaryKeyMeta(meta PrimaryKeyMeta) PrimaryKeyMeta {
-	meta.Columns = append([]string(nil), meta.Columns...)
+	meta.Columns = slices.Clone(meta.Columns)
 	return meta
 }
 
 func cloneForeignKeyMeta(meta ForeignKeyMeta) ForeignKeyMeta {
-	meta.Columns = append([]string(nil), meta.Columns...)
-	meta.TargetColumns = append([]string(nil), meta.TargetColumns...)
+	meta.Columns = slices.Clone(meta.Columns)
+	meta.TargetColumns = slices.Clone(meta.TargetColumns)
 	return meta
 }
 

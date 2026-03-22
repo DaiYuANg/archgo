@@ -341,19 +341,20 @@ func resolveRelationMeta(def tableDefinition, field reflect.StructField, binder 
 }
 
 func resolveColumnName(field reflect.StructField) string {
-	for _, key := range []string{"column", "dbx", "json"} {
+	keys := []string{"column", "dbx", "json"}
+	key, ok := lo.Find(keys, func(key string) bool {
 		raw := strings.TrimSpace(field.Tag.Get(key))
 		if raw == "" || raw == "-" {
-			continue
+			return false
 		}
-
 		name := strings.TrimSpace(strings.Split(raw, ",")[0])
-		if name != "" && name != "-" {
-			return name
-		}
+		return name != "" && name != "-"
+	})
+	if !ok {
+		return toSnakeCase(field.Name)
 	}
-
-	return toSnakeCase(field.Name)
+	raw := strings.TrimSpace(field.Tag.Get(key))
+	return strings.TrimSpace(strings.Split(raw, ",")[0])
 }
 
 func resolveTagNameAndOptions(field reflect.StructField) (string, map[string]string) {
@@ -364,13 +365,14 @@ func resolveTagNameAndOptions(field reflect.StructField) (string, map[string]str
 		if name == "" {
 			name = toSnakeCase(field.Name)
 		}
-		options := make(map[string]string, len(parts)-1)
-		for _, part := range parts[1:] {
-			key, value := splitTagOption(part)
-			if key != "" {
-				options[key] = value
+		pairs := lo.FilterMap(parts[1:], func(part string, _ int) (lo.Entry[string, string], bool) {
+			k, v := splitTagOption(part)
+			if k == "" {
+				return lo.Entry[string, string]{}, false
 			}
-		}
+			return lo.Entry[string, string]{Key: k, Value: v}, true
+		})
+		options := lo.Associate(pairs, func(e lo.Entry[string, string]) (string, string) { return e.Key, e.Value })
 		return name, options
 	}
 
@@ -383,14 +385,14 @@ func parseTagOptions(raw string) map[string]string {
 		return map[string]string{}
 	}
 	parts := strings.Split(trimmed, ",")
-	options := make(map[string]string, len(parts))
-	for _, part := range parts {
-		key, value := splitTagOption(part)
-		if key != "" {
-			options[key] = value
+	pairs := lo.FilterMap(parts, func(part string, _ int) (lo.Entry[string, string], bool) {
+		k, v := splitTagOption(part)
+		if k == "" {
+			return lo.Entry[string, string]{}, false
 		}
-	}
-	return options
+		return lo.Entry[string, string]{Key: k, Value: v}, true
+	})
+	return lo.Associate(pairs, func(e lo.Entry[string, string]) (string, string) { return e.Key, e.Value })
 }
 
 func splitTagOption(raw string) (string, string) {

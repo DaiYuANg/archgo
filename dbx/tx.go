@@ -3,6 +3,7 @@ package dbx
 import (
 	"context"
 	"database/sql"
+	"slices"
 
 	"github.com/DaiYuANg/arcgo/dbx/dialect"
 )
@@ -23,7 +24,7 @@ func (tx *Tx) Dialect() dialect.Dialect {
 }
 
 func (tx *Tx) Bound(sql string, args ...any) BoundQuery {
-	return BoundQuery{SQL: sql, Args: append([]any(nil), args...)}
+	return BoundQuery{SQL: sql, Args: slices.Clone(args)}
 }
 
 func (tx *Tx) QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error) {

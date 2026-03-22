@@ -1,6 +1,19 @@
 # dbx Benchmarks
 
-Run: `go test ./dbx -run '^$' -bench . -benchmem -count=3`
+Run: `go test ./dbx ./dbx/migrate -run '^$' -bench . -benchmem -count=3`
+
+## Memory vs IO Backends
+
+SQLite benchmarks run two variants to isolate bottlenecks:
+
+- **Memory**: `:memory:` SQLite — no disk I/O, CPU + alloc bound
+- **IO**: temp file SQLite — real disk I/O, reflects production behavior
+
+Compare ns/op and allocs: if Memory ≪ IO (Memory faster), the path is I/O-bound; if Memory ≈ IO (similar), the path is CPU-bound.
+
+```
+go test ./dbx -run '^$' -bench 'BenchmarkLoadBelongsTo|BenchmarkQueryAllStructMapper' -benchmem -count=2
+```
 
 ## Bottleneck Summary (real sqlite, arm64)
 
