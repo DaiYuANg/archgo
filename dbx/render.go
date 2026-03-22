@@ -94,7 +94,11 @@ func (q *SelectQuery) Build(d dialect.Dialect) (BoundQuery, error) {
 	if err := renderSelectStatement(state, q); err != nil {
 		return BoundQuery{}, err
 	}
-	return state.BoundQuery(), nil
+	bound := state.BoundQuery()
+	if q.LimitN != nil && *q.LimitN > 0 {
+		bound.CapacityHint = *q.LimitN
+	}
+	return bound, nil
 }
 
 func renderSelectStatement(state *renderState, q *SelectQuery) error {

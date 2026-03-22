@@ -74,6 +74,8 @@ func QueryAll[E any](ctx context.Context, session Session, query QueryBuilder, m
 
 // QueryAllBound executes a pre-built BoundQuery and maps all rows. Use with Build
 // for reuse when executing the same query multiple times.
+// When bound.CapacityHint > 0 and mapper implements CapacityHintScanner, uses
+// pre-allocated slice to reduce append growth.
 func QueryAllBound[E any](ctx context.Context, session Session, bound BoundQuery, mapper RowsScanner[E]) ([]E, error) {
 	if mapper == nil {
 		return nil, ErrNilMapper
@@ -86,5 +88,10 @@ func QueryAllBound[E any](ctx context.Context, session Session, bound BoundQuery
 		return nil, err
 	}
 	defer rows.Close()
+	if bound.CapacityHint > 0 {
+		if withCap, ok := any(mapper).(CapacityHintScanner[E]); ok {
+			return withCap.ScanRowsWithCapacity(rows, bound.CapacityHint)
+		}
+	}
 	return mapper.ScanRows(rows)
 }

@@ -60,7 +60,27 @@ func BenchmarkQueryAllStructMapper(b *testing.B) {
 	mapper := MustStructMapper[accountRecord]()
 	query := Select(accounts.AllColumns()...).From(accounts)
 
-	sqlDB, cleanup := OpenTestSQLite(b, mapperScanAccountsDDL,
+	sqlDB, cleanup := OpenBenchmarkSQLite(b, mapperScanAccountsDDL,
+		`INSERT INTO "accounts" ("id","nickname","bio","label") VALUES (1,'ally','hello','admin'),(2,NULL,NULL,'reader')`,
+	)
+	defer cleanup()
+
+	core := New(sqlDB, testSQLiteDialect{})
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if _, err := QueryAll(context.Background(), core, query, mapper); err != nil {
+			b.Fatalf("QueryAll returned error: %v", err)
+		}
+	}
+}
+
+func BenchmarkQueryAllStructMapperWithLimit(b *testing.B) {
+	accounts := MustSchema("accounts", accountSchema{})
+	mapper := MustStructMapper[accountRecord]()
+	query := Select(accounts.AllColumns()...).From(accounts).Limit(20)
+
+	sqlDB, cleanup := OpenBenchmarkSQLite(b, mapperScanAccountsDDL,
 		`INSERT INTO "accounts" ("id","nickname","bio","label") VALUES (1,'ally','hello','admin'),(2,NULL,NULL,'reader')`,
 	)
 	defer cleanup()
@@ -80,7 +100,7 @@ func BenchmarkQueryCursorStructMapper(b *testing.B) {
 	mapper := MustStructMapper[accountRecord]()
 	query := Select(accounts.AllColumns()...).From(accounts)
 
-	sqlDB, cleanup := OpenTestSQLite(b, mapperScanAccountsDDL,
+	sqlDB, cleanup := OpenBenchmarkSQLite(b, mapperScanAccountsDDL,
 		`INSERT INTO "accounts" ("id","nickname","bio","label") VALUES (1,'ally','hello','admin'),(2,NULL,NULL,'reader')`,
 	)
 	defer cleanup()
@@ -114,7 +134,7 @@ func BenchmarkSQLScalar(b *testing.B) {
 		return BoundQuery{SQL: `SELECT count(*) FROM "users"`}, nil
 	})
 
-	sqlDB, cleanup := OpenTestSQLiteWithSchema(b,
+	sqlDB, cleanup := OpenBenchmarkSQLiteWithSchema(b,
 		`INSERT INTO "roles" ("id","name") VALUES (1,'r')`,
 		`INSERT INTO "users" ("username","email_address","status","role_id") VALUES ('a','a@x.com',1,1),('b','b@x.com',1,1)`,
 	)
@@ -136,7 +156,7 @@ func BenchmarkQueryAllStructMapperJSONCodec(b *testing.B) {
 	mapper := MustStructMapper[codecRecord]()
 	query := Select(codecAccounts.AllColumns()...).From(codecAccounts)
 
-	sqlDB, cleanup := OpenTestSQLite(b, mapperCodecExtraDDL,
+	sqlDB, cleanup := OpenBenchmarkSQLite(b, mapperCodecExtraDDL,
 		`INSERT INTO "codec_accounts" ("id","preferences","tags") VALUES (1,'{"theme":"dark","flags":["alpha","beta"]}','go,dbx,orm')`,
 	)
 	defer cleanup()

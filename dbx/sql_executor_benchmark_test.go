@@ -10,7 +10,7 @@ func BenchmarkSQLList(b *testing.B) {
 		return BoundQuery{SQL: `SELECT "id", "username" FROM "users" WHERE "status" = ?`, Args: []any{int64(1)}}, nil
 	})
 
-	sqlDB, cleanup := OpenTestSQLiteWithSchema(b,
+	sqlDB, cleanup := OpenBenchmarkSQLiteWithSchema(b,
 		`INSERT INTO "roles" ("id","name") VALUES (1,'r')`,
 		`INSERT INTO "users" ("username","email_address","status","role_id") VALUES ('alice','a@x.com',1,1),('bob','b@x.com',1,1)`,
 	)
@@ -32,7 +32,7 @@ func BenchmarkSQLGet(b *testing.B) {
 		return BoundQuery{SQL: `SELECT "id", "username" FROM "users" WHERE "id" = ?`, Args: []any{int64(1)}}, nil
 	})
 
-	sqlDB, cleanup := OpenTestSQLiteWithSchema(b,
+	sqlDB, cleanup := OpenBenchmarkSQLiteWithSchema(b,
 		`INSERT INTO "roles" ("id","name") VALUES (1,'r')`,
 		`INSERT INTO "users" ("id","username","email_address","status","role_id") VALUES (1,'alice','a@x.com',1,1)`,
 	)
@@ -54,7 +54,7 @@ func BenchmarkSQLFind(b *testing.B) {
 		return BoundQuery{SQL: `SELECT "id", "username" FROM "users" WHERE "id" = ?`, Args: []any{int64(1)}}, nil
 	})
 
-	sqlDB, cleanup := OpenTestSQLiteWithSchema(b,
+	sqlDB, cleanup := OpenBenchmarkSQLiteWithSchema(b,
 		`INSERT INTO "roles" ("id","name") VALUES (1,'r')`,
 		`INSERT INTO "users" ("id","username","email_address","status","role_id") VALUES (1,'alice','a@x.com',1,1)`,
 	)

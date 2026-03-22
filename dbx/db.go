@@ -13,6 +13,7 @@ type DB struct {
 	raw     *sql.DB
 	dialect dialect.Dialect
 	observe runtimeObserver
+	relation *relationRuntime
 }
 
 func New(raw *sql.DB, d dialect.Dialect) *DB {
@@ -25,6 +26,7 @@ func NewWithOptions(raw *sql.DB, d dialect.Dialect, opts ...Option) *DB {
 		raw:     raw,
 		dialect: d,
 		observe: newRuntimeObserver(config),
+		relation: newRelationRuntime(),
 	}
 }
 
@@ -37,7 +39,16 @@ func (db *DB) Dialect() dialect.Dialect {
 }
 
 func (db *DB) WithSQLDB(raw *sql.DB) *DB {
-	return &DB{raw: raw, dialect: db.dialect, observe: db.observe}
+	return &DB{raw: raw, dialect: db.dialect, observe: db.observe, relation: db.relation}
+}
+
+// RelationRuntime returns the relation load runtime (cache and pools) for this DB.
+// Used by LoadBelongsTo, LoadHasMany, LoadManyToMany.
+func (db *DB) RelationRuntime() *relationRuntime {
+	if db == nil || db.relation == nil {
+		return defaultRelationRuntime
+	}
+	return db.relation
 }
 
 func (db *DB) Logger() *slog.Logger {
@@ -153,14 +164,14 @@ func (db *DB) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) {
 		return nil, err
 	}
 	db.observe.after(ctx, event)
-	return &Tx{raw: tx, dialect: db.dialect, observe: db.observe}, nil
+	return &Tx{raw: tx, dialect: db.dialect, observe: db.observe, relation: db.relation}, nil
 }
 
 func (db *DB) WithTx(tx *sql.Tx) *Tx {
 	if tx == nil {
 		return nil
 	}
-	return &Tx{raw: tx, dialect: db.dialect, observe: db.observe}
+	return &Tx{raw: tx, dialect: db.dialect, observe: db.observe, relation: db.relation}
 }
 
 func (db *DB) Migrator(opts migrate.RunnerOptions) *migrate.Runner {

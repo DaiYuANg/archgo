@@ -12,7 +12,7 @@ func BenchmarkLoadBelongsTo(b *testing.B) {
 	roles := MustSchema("roles", relationRoleSchema{})
 	items := []relationUser{{ID: 1, Name: "alice", RoleID: 2}, {ID: 2, Name: "bob", RoleID: 4}}
 
-	sqlDB, cleanup := OpenTestSQLite(b, relationTestSchemaDDL,
+	sqlDB, cleanup := OpenBenchmarkSQLite(b, relationTestSchemaDDL,
 		`INSERT INTO "roles" ("id","name") VALUES (2,'admin')`,
 	)
 	defer cleanup()
@@ -38,7 +38,7 @@ func BenchmarkLoadHasMany(b *testing.B) {
 	posts := MustSchema("posts", relationPostSchema{})
 	items := []relationUser{{ID: 1, Name: "alice"}, {ID: 2, Name: "bob"}}
 
-	sqlDB, cleanup := OpenTestSQLite(b, relationTestSchemaDDL,
+	sqlDB, cleanup := OpenBenchmarkSQLite(b, relationTestSchemaDDL,
 		`INSERT INTO "roles" ("id","name") VALUES (1,'r')`,
 		`INSERT INTO "users" ("id","name","role_id") VALUES (1,'alice',1),(2,'bob',1)`,
 		`INSERT INTO "posts" ("id","user_id","title") VALUES (100,1,'first'),(101,1,'second'),(200,2,'third')`,
@@ -66,7 +66,7 @@ func BenchmarkLoadManyToMany(b *testing.B) {
 	tags := MustSchema("tags", relationTagSchema{})
 	items := []relationUser{{ID: 1, Name: "alice"}, {ID: 2, Name: "bob"}}
 
-	sqlDB, cleanup := OpenTestSQLite(b, relationTestSchemaDDL,
+	sqlDB, cleanup := OpenBenchmarkSQLite(b, relationTestSchemaDDL,
 		`INSERT INTO "roles" ("id","name") VALUES (1,'r')`,
 		`INSERT INTO "users" ("id","name","role_id") VALUES (1,'alice',1),(2,'bob',1)`,
 		`INSERT INTO "tags" ("id","name") VALUES (10,'red'),(11,'blue')`,

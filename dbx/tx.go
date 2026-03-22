@@ -11,6 +11,7 @@ type Tx struct {
 	raw     *sql.Tx
 	dialect dialect.Dialect
 	observe runtimeObserver
+	relation *relationRuntime
 }
 
 func (tx *Tx) SQLTx() *sql.Tx {
@@ -134,4 +135,12 @@ func (tx *Tx) Rollback() error {
 
 func (tx *Tx) SQL() *SQLExecutor {
 	return &SQLExecutor{session: tx}
+}
+
+// RelationRuntime returns the relation load runtime for this Tx.
+func (tx *Tx) RelationRuntime() *relationRuntime {
+	if tx == nil || tx.relation == nil {
+		return defaultRelationRuntime
+	}
+	return tx.relation
 }

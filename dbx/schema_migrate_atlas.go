@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"hash/fnv"
 	"reflect"
+	"strconv"
 	"strings"
 
 	atlasmigrate "ariga.io/atlas/sql/migrate"
@@ -13,8 +15,78 @@ import (
 	atlasschema "ariga.io/atlas/sql/schema"
 	atlassqlite "ariga.io/atlas/sql/sqlite"
 	"github.com/DaiYuANg/arcgo/collectionx"
+	"github.com/samber/hot"
 	"github.com/samber/lo"
 )
+
+var compiledSchemaCache = hot.NewHotCache[string, *atlasCompiledSchema](hot.LRU, 128).Build()
+
+func schemaFingerprint(schemas []SchemaResource) string {
+	if len(schemas) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	for _, s := range schemas {
+		spec := buildTableSpec(s.schemaRef())
+		b.WriteString("T:")
+		b.WriteString(spec.Name)
+		b.WriteString("|")
+		for _, c := range spec.Columns {
+			b.WriteString("C:")
+			b.WriteString(c.Name)
+			b.WriteString(":")
+			if c.SQLType != "" {
+				b.WriteString(c.SQLType)
+			} else {
+				b.WriteString(inferTypeName(c))
+			}
+			b.WriteString(":")
+			b.WriteString(strconv.FormatBool(c.Nullable))
+			b.WriteString(":")
+			b.WriteString(c.DefaultValue)
+			b.WriteString(":")
+			b.WriteString(strconv.FormatBool(c.PrimaryKey))
+			b.WriteString(":")
+			b.WriteString(strconv.FormatBool(c.AutoIncrement))
+			if c.References != nil {
+				b.WriteString(":ref:")
+				b.WriteString(c.References.TargetTable)
+				b.WriteString(".")
+				b.WriteString(c.References.TargetColumn)
+			}
+			b.WriteString("|")
+		}
+		for _, idx := range spec.Indexes {
+			b.WriteString("I:")
+			b.WriteString(idx.Name)
+			b.WriteString(":")
+			b.WriteString(strings.Join(idx.Columns, ","))
+			b.WriteString(":")
+			b.WriteString(strconv.FormatBool(idx.Unique))
+			b.WriteString("|")
+		}
+		if spec.PrimaryKey != nil {
+			b.WriteString("PK:")
+			b.WriteString(strings.Join(spec.PrimaryKey.Columns, ","))
+			b.WriteString("|")
+		}
+		for _, fk := range spec.ForeignKeys {
+			b.WriteString("FK:")
+			b.WriteString(foreignKeyKey(fk))
+			b.WriteString("|")
+		}
+		for _, ck := range spec.Checks {
+			b.WriteString("CK:")
+			b.WriteString(ck.Name)
+			b.WriteString(":")
+			b.WriteString(checkKey(ck.Expression))
+			b.WriteString("|")
+		}
+	}
+	h := fnv.New64a()
+	_, _ = h.Write([]byte(b.String()))
+	return strconv.FormatUint(h.Sum64(), 16)
+}
 
 type atlasCompiledSchema struct {
 	schema    *atlasschema.Schema
@@ -62,9 +134,18 @@ func planSchemaChangesWithAtlas(ctx context.Context, session Session, schemas ..
 	if current != nil && strings.TrimSpace(current.Name) != "" {
 		schemaName = current.Name
 	}
-	compiled, err := compileAtlasSchema(session.Dialect().Name(), driver, schemaName, schemas)
-	if err != nil {
-		return MigrationPlan{}, true, err
+	dialectName := session.Dialect().Name()
+	cacheKey := dialectName + ":" + schemaName + ":" + schemaFingerprint(schemas)
+	var compiled *atlasCompiledSchema
+	if v, ok, _ := compiledSchemaCache.Get(cacheKey); ok {
+		compiled = v
+	} else {
+		var compileErr error
+		compiled, compileErr = compileAtlasSchema(dialectName, driver, schemaName, schemas)
+		if compileErr != nil {
+			return MigrationPlan{}, true, compileErr
+		}
+		compiledSchemaCache.Set(cacheKey, compiled)
 	}
 	if current == nil {
 		current = atlasschema.New(schemaName)
@@ -73,6 +154,10 @@ func planSchemaChangesWithAtlas(ctx context.Context, session Session, schemas ..
 	changes, err := driver.SchemaDiff(current, compiled.schema)
 	if err != nil {
 		return MigrationPlan{}, true, err
+	}
+	if len(changes) == 0 {
+		report := atlasReportFromChanges(nil, compiled, current)
+		return MigrationPlan{Actions: nil, Report: report}, true, nil
 	}
 	report := atlasReportFromChanges(changes, compiled, current)
 	safeChanges, manualActions := atlasSplitChanges(changes, compiled, current)

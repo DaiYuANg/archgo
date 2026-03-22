@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"reflect"
+	"strings"
 
 	"github.com/DaiYuANg/arcgo/collectionx"
 	"github.com/samber/lo"
@@ -20,7 +21,7 @@ type relationKeyPair struct {
 	target any
 }
 
-func collectSourceRelationKeys[E any](entities []E, mapper Mapper[E], schema schemaDefinition, meta RelationMeta) ([]any, []relationLookupValue, error) {
+func collectSourceRelationKeys[E any](rt *relationRuntime, entities []E, mapper Mapper[E], schema schemaDefinition, meta RelationMeta) ([]any, []relationLookupValue, error) {
 	localColumn, err := relationSourceColumn(schemaAdapter[E]{def: schema}, meta)
 	if err != nil {
 		return nil, nil, err
@@ -28,7 +29,11 @@ func collectSourceRelationKeys[E any](entities []E, mapper Mapper[E], schema sch
 
 	lookup := make([]relationLookupValue, len(entities))
 	keys := collectionx.NewListWithCapacity[any](len(entities))
-	seen := make(map[any]struct{}, len(entities))
+	seen := rt.seenSetPool.Get().(collectionx.Map[any, struct{}])
+	defer func() {
+		seen.Clear()
+		rt.seenSetPool.Put(seen)
+	}()
 	for index := range entities {
 		key, err := entityRelationKey(mapper, &entities[index], localColumn.Name)
 		if err != nil {
@@ -38,10 +43,10 @@ func collectSourceRelationKeys[E any](entities []E, mapper Mapper[E], schema sch
 		if !key.present {
 			continue
 		}
-		if _, ok := seen[key.key]; ok {
+		if _, ok := seen.Get(key.key); ok {
 			continue
 		}
-		seen[key.key] = struct{}{}
+		seen.Set(key.key, struct{}{})
 		keys.Add(key.key)
 	}
 	return keys.Values(), lookup, nil
@@ -106,15 +111,38 @@ func relationTargetColumnForSchema(schema relationSchemaSource, meta RelationMet
 	return column, nil
 }
 
-func queryRelationTargets[E any](ctx context.Context, session Session, schema SchemaSource[E], mapper Mapper[E], targetColumn ColumnMeta, keys []any) ([]E, error) {
-	query := Select(allSelectItems(schema.schemaRef())...).
+func queryRelationTargets[E any](ctx context.Context, session Session, rt *relationRuntime, schema SchemaSource[E], mapper Mapper[E], targetColumn ColumnMeta, keys []any) ([]E, error) {
+	bound, err := buildRelationTargetsBoundQuery(session, rt, schema, targetColumn, keys)
+	if err != nil {
+		return nil, err
+	}
+	return QueryAllBound[E](ctx, session, bound, mapper)
+}
+
+func buildRelationTargetsBoundQuery(session Session, rt *relationRuntime, schema relationSchemaSource, targetColumn ColumnMeta, keys []any) (BoundQuery, error) {
+	def := schema.schemaRef()
+	dialectName := session.Dialect().Name()
+	tableName := schema.tableRef().Name()
+	selectSig := strings.Join(lo.Map(def.columns, func(c ColumnMeta, _ int) string { return c.Name }), ",")
+	cacheKey := fmt.Sprintf("rel:%s:%s:%s:%s:%d", dialectName, tableName, selectSig, targetColumn.Name, len(keys))
+	if cachedSQL, ok, _ := rt.queryCache.Get(cacheKey); ok {
+		args := make([]any, len(keys))
+		copy(args, keys)
+		return BoundQuery{SQL: cachedSQL, Args: args}, nil
+	}
+	query := Select(allSelectItems(def)...).
 		From(schema).
 		Where(metadataComparisonPredicate{
 			left:  targetColumn,
 			op:    OpIn,
 			right: keys,
 		})
-	return QueryAll(ctx, session, query, mapper)
+	bound, err := Build(session, query)
+	if err != nil {
+		return BoundQuery{}, err
+	}
+	rt.queryCache.Set(cacheKey, bound.SQL)
+	return bound, nil
 }
 
 func allSelectItems(def schemaDefinition) []SelectItem {
@@ -138,8 +166,28 @@ func indexRelationTargets[E any](targets []E, mapper Mapper[E], column string) (
 	return indexed, nil
 }
 
-func groupRelationTargets[E any](targets []E, mapper Mapper[E], column string) (map[any][]E, error) {
-	grouped := make(map[any][]E, len(targets))
+func groupRelationTargets[E any](rt *relationRuntime, targets []E, mapper Mapper[E], column string) (map[any][]E, error) {
+	counts := rt.countsMapPool.Get().(collectionx.Map[any, int])
+	defer func() {
+		counts.Clear()
+		rt.countsMapPool.Put(counts)
+	}()
+	for index := range targets {
+		key, err := entityRelationKey(mapper, &targets[index], column)
+		if err != nil {
+			return nil, err
+		}
+		if !key.present {
+			continue
+		}
+		v, _ := counts.Get(key.key)
+		counts.Set(key.key, v+1)
+	}
+	grouped := make(map[any][]E, counts.Len())
+	counts.Range(func(k any, cap int) bool {
+		grouped[k] = make([]E, 0, cap)
+		return true
+	})
 	for index := range targets {
 		key, err := entityRelationKey(mapper, &targets[index], column)
 		if err != nil {
@@ -168,7 +216,7 @@ func relationKeyTypeForMeta(def schemaDefinition, column string) reflect.Type {
 	return columnMeta.GoType
 }
 
-func queryManyToManyPairs(ctx context.Context, session Session, meta RelationMeta, sourceKeys []any, sourceType, targetType reflect.Type) ([]relationKeyPair, error) {
+func queryManyToManyPairs(ctx context.Context, session Session, rt *relationRuntime, meta RelationMeta, sourceKeys []any, sourceType, targetType reflect.Type) ([]relationKeyPair, error) {
 	if meta.ThroughTable == "" {
 		return nil, fmt.Errorf("dbx: many-to-many relation %s requires join table", meta.Name)
 	}
@@ -176,9 +224,31 @@ func queryManyToManyPairs(ctx context.Context, session Session, meta RelationMet
 		return nil, fmt.Errorf("dbx: many-to-many relation %s requires join_local and join_target", meta.Name)
 	}
 
+	bound, err := buildManyToManyPairsBoundQuery(session, rt, meta, sourceKeys)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := session.QueryBoundContext(ctx, bound)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	return scanRelationPairs(rows, sourceType, targetType)
+}
+
+func buildManyToManyPairsBoundQuery(session Session, rt *relationRuntime, meta RelationMeta, sourceKeys []any) (BoundQuery, error) {
+	dialectName := session.Dialect().Name()
+	cacheKey := fmt.Sprintf("m2m:%s:%s:%s:%s:%d", dialectName, meta.ThroughTable, meta.ThroughLocalColumn, meta.ThroughTargetColumn, len(sourceKeys))
+	if cachedSQL, ok, _ := rt.queryCache.Get(cacheKey); ok {
+		args := make([]any, len(sourceKeys))
+		copy(args, sourceKeys)
+		return BoundQuery{SQL: cachedSQL, Args: args}, nil
+	}
+
 	through := Table{def: tableDefinition{name: meta.ThroughTable}}
-	localColumn := ColumnMeta{Name: meta.ThroughLocalColumn, Table: through.Name(), GoType: sourceType}
-	targetColumn := ColumnMeta{Name: meta.ThroughTargetColumn, Table: through.Name(), GoType: targetType}
+	localColumn := ColumnMeta{Name: meta.ThroughLocalColumn, Table: through.Name(), GoType: nil}
+	targetColumn := ColumnMeta{Name: meta.ThroughTargetColumn, Table: through.Name(), GoType: nil}
 	query := Select(
 		schemaSelectItem{meta: localColumn},
 		schemaSelectItem{meta: targetColumn},
@@ -190,15 +260,10 @@ func queryManyToManyPairs(ctx context.Context, session Session, meta RelationMet
 
 	bound, err := Build(session, query)
 	if err != nil {
-		return nil, err
+		return BoundQuery{}, err
 	}
-	rows, err := session.QueryBoundContext(ctx, bound)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	return scanRelationPairs(rows, sourceType, targetType)
+	rt.queryCache.Set(cacheKey, bound.SQL)
+	return bound, nil
 }
 
 func scanRelationPairs(rows *sql.Rows, sourceType, targetType reflect.Type) ([]relationKeyPair, error) {
@@ -242,25 +307,44 @@ func relationScanDestination(typ reflect.Type) (any, func() any) {
 	return holder.Interface(), func() any { return holder.Elem().Interface() }
 }
 
-func uniqueRelationKeysFromPairs(pairs []relationKeyPair, useSource bool) []any {
+func uniqueRelationKeysFromPairs(rt *relationRuntime, pairs []relationKeyPair, useSource bool) []any {
 	keys := collectionx.NewListWithCapacity[any](len(pairs))
-	seen := make(map[any]struct{}, len(pairs))
+	seen := rt.seenSetPool.Get().(collectionx.Map[any, struct{}])
+	defer func() {
+		seen.Clear()
+		rt.seenSetPool.Put(seen)
+	}()
 	for _, pair := range pairs {
 		key := pair.target
 		if useSource {
 			key = pair.source
 		}
-		if _, ok := seen[key]; ok {
+		if _, ok := seen.Get(key); ok {
 			continue
 		}
-		seen[key] = struct{}{}
+		seen.Set(key, struct{}{})
 		keys.Add(key)
 	}
 	return keys.Values()
 }
 
-func groupManyToManyTargets[E any](pairs []relationKeyPair, indexed map[any]E) map[any][]E {
-	grouped := make(map[any][]E, len(pairs))
+func groupManyToManyTargets[E any](rt *relationRuntime, pairs []relationKeyPair, indexed map[any]E) map[any][]E {
+	counts := rt.countsMapPool.Get().(collectionx.Map[any, int])
+	defer func() {
+		counts.Clear()
+		rt.countsMapPool.Put(counts)
+	}()
+	for _, pair := range pairs {
+		if _, ok := indexed[pair.target]; ok {
+			v, _ := counts.Get(pair.source)
+			counts.Set(pair.source, v+1)
+		}
+	}
+	grouped := make(map[any][]E, counts.Len())
+	counts.Range(func(k any, cap int) bool {
+		grouped[k] = make([]E, 0, cap)
+		return true
+	})
 	for _, pair := range pairs {
 		target, ok := indexed[pair.target]
 		if !ok {

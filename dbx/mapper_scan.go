@@ -17,6 +17,14 @@ type scanPlan struct {
 }
 
 func (m StructMapper[E]) ScanRows(rows *sql.Rows) ([]E, error) {
+	return m.scanRowsWithCapacity(rows, 0)
+}
+
+func (m StructMapper[E]) ScanRowsWithCapacity(rows *sql.Rows, capacityHint int) ([]E, error) {
+	return m.scanRowsWithCapacity(rows, capacityHint)
+}
+
+func (m StructMapper[E]) scanRowsWithCapacity(rows *sql.Rows, capacityHint int) ([]E, error) {
 	if m.meta == nil {
 		return nil, ErrNilMapper
 	}
@@ -32,7 +40,27 @@ func (m StructMapper[E]) ScanRows(rows *sql.Rows) ([]E, error) {
 	if err != nil {
 		return nil, err
 	}
+	if capacityHint > 0 {
+		return m.collectRowsWithCapacity(context.Background(), plan, rows, capacityHint)
+	}
 	return scanlib.AllFromRows[E](context.Background(), m.scanMapper(plan), rows)
+}
+
+func (m StructMapper[E]) collectRowsWithCapacity(ctx context.Context, plan *scanPlan, rows *sql.Rows, capacityHint int) ([]E, error) {
+	cursor, err := scanlib.CursorFromRows(ctx, m.scanMapper(plan), rows)
+	if err != nil {
+		return nil, err
+	}
+	defer cursor.Close()
+	result := make([]E, 0, capacityHint)
+	for cursor.Next() {
+		v, err := cursor.Get()
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, v)
+	}
+	return result, cursor.Err()
 }
 
 func (m StructMapper[E]) scanOneRows(ctx context.Context, rows *sql.Rows) (E, bool, error) {

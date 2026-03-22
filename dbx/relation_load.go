@@ -31,7 +31,8 @@ func LoadManyToMany[S any, T any](ctx context.Context, session Session, sources 
 	}
 
 	meta := relation.Meta()
-	sourceKeys, sourceLookup, err := collectSourceRelationKeys(sources, sourceMapper, sourceSchema.schemaRef(), meta)
+	rt := getRelationRuntime(session)
+	sourceKeys, sourceLookup, err := collectSourceRelationKeys(rt, sources, sourceMapper, sourceSchema.schemaRef(), meta)
 	if err != nil {
 		return err
 	}
@@ -44,7 +45,7 @@ func LoadManyToMany[S any, T any](ctx context.Context, session Session, sources 
 	if err != nil {
 		return err
 	}
-	pairs, err := queryManyToManyPairs(ctx, session, meta, sourceKeys, relationKeyTypeForMeta(sourceSchema.schemaRef(), meta.LocalColumn), targetColumn.GoType)
+	pairs, err := queryManyToManyPairs(ctx, session, rt, meta, sourceKeys, relationKeyTypeForMeta(sourceSchema.schemaRef(), meta.LocalColumn), targetColumn.GoType)
 	if err != nil {
 		return err
 	}
@@ -53,8 +54,8 @@ func LoadManyToMany[S any, T any](ctx context.Context, session Session, sources 
 		return nil
 	}
 
-	targetKeys := uniqueRelationKeysFromPairs(pairs, false)
-	targets, err := queryRelationTargets(ctx, session, targetSchema, targetMapper, targetColumn, targetKeys)
+	targetKeys := uniqueRelationKeysFromPairs(rt, pairs, false)
+	targets, err := queryRelationTargets(ctx, session, rt, targetSchema, targetMapper, targetColumn, targetKeys)
 	if err != nil {
 		return err
 	}
@@ -62,7 +63,7 @@ func LoadManyToMany[S any, T any](ctx context.Context, session Session, sources 
 	if err != nil {
 		return err
 	}
-	grouped := groupManyToManyTargets(pairs, targetsByKey)
+	grouped := groupManyToManyTargets(rt, pairs, targetsByKey)
 	for index := range sources {
 		key := sourceLookup[index]
 		assign(index, &sources[index], grouped[key.key])
@@ -81,7 +82,8 @@ func loadSingleRelation[S any, T any](ctx context.Context, session Session, sour
 		return nil
 	}
 
-	sourceKeys, sourceLookup, err := collectSourceRelationKeys(sources, sourceMapper, sourceSchema.schemaRef(), meta)
+	rt := getRelationRuntime(session)
+	sourceKeys, sourceLookup, err := collectSourceRelationKeys(rt, sources, sourceMapper, sourceSchema.schemaRef(), meta)
 	if err != nil {
 		return err
 	}
@@ -96,7 +98,7 @@ func loadSingleRelation[S any, T any](ctx context.Context, session Session, sour
 	if err != nil {
 		return err
 	}
-	targets, err := queryRelationTargets(ctx, session, targetSchema, targetMapper, targetColumn, sourceKeys)
+	targets, err := queryRelationTargets(ctx, session, rt, targetSchema, targetMapper, targetColumn, sourceKeys)
 	if err != nil {
 		return err
 	}
@@ -131,7 +133,8 @@ func loadMultiRelation[S any, T any](ctx context.Context, session Session, sourc
 		return nil
 	}
 
-	sourceKeys, sourceLookup, err := collectSourceRelationKeys(sources, sourceMapper, sourceSchema.schemaRef(), meta)
+	rt := getRelationRuntime(session)
+	sourceKeys, sourceLookup, err := collectSourceRelationKeys(rt, sources, sourceMapper, sourceSchema.schemaRef(), meta)
 	if err != nil {
 		return err
 	}
@@ -144,11 +147,11 @@ func loadMultiRelation[S any, T any](ctx context.Context, session Session, sourc
 	if err != nil {
 		return err
 	}
-	targets, err := queryRelationTargets(ctx, session, targetSchema, targetMapper, targetColumn, sourceKeys)
+	targets, err := queryRelationTargets(ctx, session, rt, targetSchema, targetMapper, targetColumn, sourceKeys)
 	if err != nil {
 		return err
 	}
-	grouped, err := groupRelationTargets(targets, targetMapper, targetColumn.Name)
+	grouped, err := groupRelationTargets(rt, targets, targetMapper, targetColumn.Name)
 	if err != nil {
 		return err
 	}

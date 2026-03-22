@@ -2,6 +2,7 @@ package dbx
 
 import (
 	"database/sql"
+	"path/filepath"
 	"testing"
 
 	_ "modernc.org/sqlite"
@@ -50,4 +51,39 @@ func OpenTestSQLiteWithSchema(tb testing.TB, dataSQL ...string) (*sql.DB, func()
 	ddl = append(ddl, testSchemaDDL)
 	ddl = append(ddl, dataSQL...)
 	return OpenTestSQLite(tb, ddl...)
+}
+
+// OpenBenchmarkSQLite opens a SQLite DB file in a temp directory (real disk I/O).
+// Use for benchmarks to simulate production; use OpenTestSQLite for fast in-memory tests.
+func OpenBenchmarkSQLite(tb testing.TB, ddl ...string) (*sql.DB, func()) {
+	tb.Helper()
+	path := filepath.Join(tb.TempDir(), "bench.db")
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		tb.Fatalf("sql.Open: %v", err)
+	}
+	db.SetMaxOpenConns(1)
+	if _, err := db.Exec("PRAGMA foreign_keys = ON"); err != nil {
+		_ = db.Close()
+		tb.Fatalf("PRAGMA foreign_keys: %v", err)
+	}
+	for _, s := range ddl {
+		if s == "" {
+			continue
+		}
+		if _, err := db.Exec(s); err != nil {
+			_ = db.Close()
+			tb.Fatalf("exec ddl %q: %v", s, err)
+		}
+	}
+	return db, func() { _ = db.Close() }
+}
+
+// OpenBenchmarkSQLiteWithSchema opens SQLite in temp dir with standard users/roles schema and optional data.
+func OpenBenchmarkSQLiteWithSchema(tb testing.TB, dataSQL ...string) (*sql.DB, func()) {
+	tb.Helper()
+	ddl := make([]string, 0, 1+len(dataSQL))
+	ddl = append(ddl, testSchemaDDL)
+	ddl = append(ddl, dataSQL...)
+	return OpenBenchmarkSQLite(tb, ddl...)
 }

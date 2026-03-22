@@ -14,6 +14,12 @@ type RowsScanner[E any] interface {
 	ScanRows(rows *sql.Rows) ([]E, error)
 }
 
+// CapacityHintScanner is an optional extension. When implemented and BoundQuery.CapacityHint > 0,
+// QueryAllBound uses ScanRowsWithCapacity to pre-allocate the result slice (reduces append growth).
+type CapacityHintScanner[E any] interface {
+	ScanRowsWithCapacity(rows *sql.Rows, capacityHint int) ([]E, error)
+}
+
 // StructMapper provides schema-less pure DTO mapping. It infers fields from struct tags (e.g. dbx)
 // and maps result columns by name. Use for arbitrary SQL when no Schema is available.
 // Dependency: StructMapper does not depend on Schema.
